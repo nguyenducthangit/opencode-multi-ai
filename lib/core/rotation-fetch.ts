@@ -350,8 +350,14 @@ export function buildExhaustedResponse(
   }
 
   const headers = new Headers({ "content-type": "application/json" });
+  // Keep "exhausted" for humans, but also include failover-recognized phrases
+  // ("quota exceeded" / "resource exhausted" / "429") so downstream model
+  // fallback triggers even when the 503 status code is stripped from the
+  // error surfaced to plugins (only the message/body survives in some paths).
   const body: Record<string, unknown> = {
-    error: `All ${count} ${displayName} accounts exhausted`,
+    error:
+      `All ${count} ${displayName} accounts exhausted ` +
+      `(429 quota exceeded / resource exhausted)`,
   };
   if (Number.isFinite(earliest)) {
     const retryAfterSec = Math.max(0, Math.ceil((earliest - now) / 1000));

@@ -181,7 +181,7 @@ const en: Dict = {
   menu_desc_add: "Device or browser OAuth",
   menu_desc_add_codex: "Device, browser OAuth, or paste OAuth JSON",
   menu_desc_add_kiro:
-    "API key, Builder ID / IDC, Profile ARN, JSON import, kiro-cli",
+    "API key, Builder ID / IDC, Profile ARN, JSON import, kiro-cli, legacy kiro.db",
   menu_desc_quota: "Refresh, live probe, reload pool",
   menu_desc_danger: "Flag, remove, prune",
   detail_title: " detail / quota ",
@@ -189,11 +189,12 @@ const en: Dict = {
   empty_hint:
     "opencode auth login → xai-multi / codex-multi / kiro-multi",
   no_accounts:
-    "No accounts yet.\n\nAdd one:\n  Codex: a device · A browser · o OAuth JSON\n  xAI: a device · A browser\n  Kiro: a IDC · i API key · I ARN · o JSON · O export · c kiro-cli\n  Esc cancels while waiting\n\nTabs: Codex | xAI | Kiro",
+    "No accounts yet.\n\nAdd one:\n  Codex: a device · A browser · o OAuth JSON\n  xAI: a device · A browser\n  Kiro: a Builder ID/IDC · I ARN · i API key · o JSON · O export · c kiro-cli\n  Esc cancels while waiting\n\nTabs: Codex | xAI | Kiro",
   lang_switched: "Language: English",
   add_device: "a  Add (device)",
   add_browser: "A  Add (browser)",
   add_codex_json: "o  Import OAuth JSON",
+  add_kiro_idc: "a  Builder ID / IDC",
   add_kiro_api_key: "i  API key (ksk_)",
   add_kiro_idc_arn: "I  IDC + Profile ARN",
   add_kiro_json: "o  Import credentials JSON",
@@ -226,10 +227,12 @@ const en: Dict = {
     "Open browser OAuth on the active tab's loopback — same pool upsert; Esc cancels",
   desc_add_codex_json:
     "Paste Codex OAuth JSON (tokens / auth.json shape) or a file path — bulk import supported",
+  desc_add_kiro_idc:
+    "AWS Builder ID / IAM Identity Center device login (start URL + sso region)",
   desc_add_kiro_api_key:
     "Add Kiro account with API key (ksk_…) and optional region",
   desc_add_kiro_idc_arn:
-    "IAM Identity Center device login with required Profile ARN",
+    "IAM Identity Center device login with Profile ARN (start URL + region + ARN)",
   desc_add_kiro_json:
     "Paste single-account credentials JSON (refreshToken + method fields)",
   desc_add_kiro_export:
@@ -317,7 +320,7 @@ const vi: Dict = {
   menu_desc_add: "OAuth thiết bị hoặc trình duyệt",
   menu_desc_add_codex: "OAuth thiết bị, trình duyệt, hoặc dán OAuth JSON",
   menu_desc_add_kiro:
-    "API key, Builder ID / IDC, Profile ARN, import JSON, kiro-cli",
+    "API key, Builder ID / IDC, Profile ARN, import JSON, kiro-cli, legacy kiro.db",
   menu_desc_quota: "Refresh, live probe, tải lại pool",
   menu_desc_danger: "Cờ, xoá, dọn",
   detail_title: " chi tiết / hạn mức ",
@@ -325,11 +328,12 @@ const vi: Dict = {
   empty_hint:
     "opencode auth login → xai-multi / codex-multi / kiro-multi",
   no_accounts:
-    "Chưa có tài khoản.\n\nThêm:\n  Codex: a mã thiết bị · A trình duyệt · o OAuth JSON\n  xAI: a mã thiết bị · A trình duyệt\n  Kiro: a IDC · i API key · I ARN · o JSON · O export · c kiro-cli\n  Esc huỷ khi đang chờ\n\nTab: Codex | xAI | Kiro",
+    "Chưa có tài khoản.\n\nThêm:\n  Codex: a mã thiết bị · A trình duyệt · o OAuth JSON\n  xAI: a mã thiết bị · A trình duyệt\n  Kiro: a Builder ID/IDC · I ARN · i API key · o JSON · O export · c kiro-cli\n  Esc huỷ khi đang chờ\n\nTab: Codex | xAI | Kiro",
   lang_switched: "Ngôn ngữ: Tiếng Việt",
   add_device: "a  Thêm (mã thiết bị)",
   add_browser: "A  Thêm (trình duyệt)",
   add_codex_json: "o  Import OAuth JSON",
+  add_kiro_idc: "a  Builder ID / IDC",
   add_kiro_api_key: "i  API key (ksk_)",
   add_kiro_idc_arn: "I  IDC + Profile ARN",
   add_kiro_json: "o  Import credentials JSON",
@@ -362,10 +366,12 @@ const vi: Dict = {
     "OAuth trình duyệt loopback của tab đang chọn — upsert vào pool; Esc huỷ",
   desc_add_codex_json:
     "Dán OAuth JSON Codex (tokens / auth.json) hoặc đường dẫn file — hỗ trợ import nhiều account",
+  desc_add_kiro_idc:
+    "Đăng nhập AWS Builder ID / IAM Identity Center (start URL + sso region)",
   desc_add_kiro_api_key:
     "Thêm tài khoản Kiro bằng API key (ksk_…) và region tuỳ chọn",
   desc_add_kiro_idc_arn:
-    "Đăng nhập IAM Identity Center (device) kèm Profile ARN bắt buộc",
+    "Đăng nhập IAM Identity Center (device) kèm Profile ARN (start URL + region + ARN)",
   desc_add_kiro_json:
     "Dán credentials JSON một account (refreshToken + các field method)",
   desc_add_kiro_export:

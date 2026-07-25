@@ -84,6 +84,22 @@ export interface RecordSuccessContext {
   record: SuccessRecordSink;
 }
 
+/**
+ * Account fields available to a live quota probe.
+ *
+ * Kept structural (not the Zod account type) so core stays decoupled; the
+ * optional provider-specific fields let Kiro probe the right region / profile
+ * instead of falling back to a `desktop` + `us-east-1` stub.
+ */
+export interface ProbeQuotaAccount {
+  accountId: string;
+  organizationId?: string;
+  authMethod?: string;
+  region?: string;
+  oidcRegion?: string;
+  profileArn?: string;
+}
+
 /** Options for the models catalog resolver. */
 export interface ResolveModelsOptions {
   accessToken?: string;
@@ -106,7 +122,7 @@ export interface ProviderDescriptor {
   detailLines(account: Record<string, unknown>, now: number): string[];
   probeQuota?(
     accessToken: string,
-    account: { accountId: string; organizationId?: string },
+    account: ProbeQuotaAccount,
   ): Promise<Record<string, unknown>>;
   hostAuth?: {
     bootstrap(providerId: string): boolean;
@@ -130,7 +146,7 @@ export interface HttpTransportAdapter {
   recordSuccess(ctx: RecordSuccessContext): Promise<void>;
   probeQuota?(
     accessToken: string,
-    account: { accountId: string; organizationId?: string },
+    account: ProbeQuotaAccount,
   ): Promise<Record<string, unknown>>;
 }
 
@@ -206,7 +222,7 @@ export interface ProviderAdapter {
   /** Optional live quota probe for limits tool / TUI. */
   probeQuota?(
     accessToken: string,
-    account: { accountId: string; organizationId?: string },
+    account: ProbeQuotaAccount,
   ): Promise<Record<string, unknown>>;
 
   /** Models catalog resolver (cache / network / defaults). */

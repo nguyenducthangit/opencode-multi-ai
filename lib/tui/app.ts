@@ -39,6 +39,7 @@ import { isInvalidGrantError } from "../core/rotation-fetch.js";
 import type {
   AccountMetadata,
   CodexAccountMetadata,
+  KiroAccountMetadata,
   XaiAccountMetadata,
 } from "../core/schemas.js";
 import {
@@ -48,7 +49,10 @@ import {
   summarizePool,
   type StatusAccount,
 } from "../core/tui-status.js";
-import type { AnyProviderAdapter } from "../core/adapter.js";
+import type {
+  AnyProviderAdapter,
+  ProbeQuotaAccount,
+} from "../core/adapter.js";
 import {
   formatBillingReset,
   formatDateTime,
@@ -224,6 +228,12 @@ type EditField = "label" | "tags" | "note";
 type KiroAddWizard =
   | { method: "api-key"; step: "key" | "region"; apiKey?: string }
   | {
+      method: "idc";
+      step: "start_url" | "region";
+      startUrl?: string;
+      idcRegion?: string;
+    }
+  | {
       method: "idc-arn";
       step: "start_url" | "region" | "arn";
       startUrl?: string;
@@ -252,7 +262,7 @@ export type RunTuiOptions = {
   probeQuota?: (
     tab: TuiTab,
     accessToken: string,
-    account: { accountId: string; organizationId?: string },
+    account: ProbeQuotaAccount,
   ) => Promise<Record<string, unknown>>;
   login?: {
     xai?: {
@@ -1925,6 +1935,14 @@ export async function runTui(opts: RunTuiOptions = {}): Promise<void> {
       );
       return;
     }
+    if (method === "idc") {
+      kiroWizard = { method: "idc", step: "start_url" };
+      showWizardInput(
+        "https://your-company.awsapps.com/start (blank = Builder ID)",
+        "IDC start URL — Enter next · Esc cancel",
+      );
+      return;
+    }
     if (method === "idc-arn") {
       kiroWizard = { method: "idc-arn", step: "start_url" };
       showWizardInput(
@@ -2022,10 +2040,18 @@ export async function runTui(opts: RunTuiOptions = {}): Promise<void> {
         return;
       }
 
-      if (kiroWizard.method === "idc-arn") {
+      if (kiroWizard.method === "idc" || kiroWizard.method === "idc-arn") {
         if (kiroWizard.step === "start_url") {
+          if (value) {
+            try {
+              new URL(value);
+            } catch {
+              setStatus({ text: "Please enter a valid URL", tone: "err" });
+              return;
+            }
+          }
           kiroWizard = {
-            method: "idc-arn",
+            method: kiroWizard.method,
             step: "region",
             startUrl: value || undefined,
           };
@@ -2035,7 +2061,7 @@ export async function runTui(opts: RunTuiOptions = {}): Promise<void> {
           );
           return;
         }
-        if (kiroWizard.step === "region") {
+        if (kiroWizard.method === "idc-arn" && kiroWizard.step === "region") {
           kiroWizard = {
             method: "idc-arn",
             step: "arn",
@@ -2044,17 +2070,80 @@ export async function runTui(opts: RunTuiOptions = {}): Promise<void> {
           };
           showWizardInput(
             "arn:aws:codewhisperer:…:profile/…",
-            "Profile ARN (required) — Enter start login · Esc cancel",
+            "Profile ARN (blank = config/kiro-cli) — Enter start · Esc cancel",
           );
           return;
         }
-        if (!value) {
-          setStatus({ text: "Profile ARN is required", tone: "err" });
+        if (kiroWizard.method === "idc" && kiroWizard.step === "region") {
+          const startUrl = kiroWizard.startUrl;
+          const idcRegion = value || undefined;
+          cancelEdit();
+          const controller = new AbortController();
+          addAbort = controller;
+          busy = true;
+          setStatus({ text: "Builder ID / IDC login…", tone: "info" });
+          try {
+            const { loginWithIdcDevice } = await import(
+              "../providers/kiro/auth/login.js"
+            );
+            const existing = manager
+              .list("kiro")
+              .filter(
+                (a): a is import("../core/schemas.js").AccountOf<"kiro"> =>
+                  a.provider === "kiro",
+              );
+            const account = await loginWithIdcDevice(
+              {
+                startUrl,
+                idcRegion,
+                existingAccounts: existing,
+                openBrowser: true,
+                signal: controller.signal,
+              },
+              (prompt) => {
+                setStatus({
+                  text: `${prompt.verificationUri}  code ${prompt.userCode}`,
+                  tone: "info",
+                });
+                safeSetContent(
+                  detailText,
+                  t`${bold(fg(T.kiroBright)("Kiro Builder ID / IDC"))}${fg(T.text)("\n\n")}${fg(T.label)("URL   ")}${fg(T.value)(prompt.verificationUri)}${fg(T.text)("\n")}${fg(T.label)("Code  ")}${bold(fg(T.ready)(prompt.userCode))}${fg(T.text)("\n\n")}${fg(T.textDim)("Esc cancels")}`,
+                );
+              },
+            );
+            await finishKiroAccount(account);
+          } catch (err) {
+            const cancelled =
+              (err as { name?: string }).name === "LoginCancelledError" ||
+              (err as Error).message === "login cancelled" ||
+              controller.signal.aborted;
+            setStatus({
+              text: cancelled
+                ? "login cancelled"
+                : `IDC login failed: ${(err as Error).message}`,
+              tone: cancelled ? "warn" : "err",
+            });
+          } finally {
+            addAbort = null;
+            busy = false;
+            refreshViews();
+          }
           return;
         }
         const startUrl = kiroWizard.startUrl;
         const idcRegion = kiroWizard.idcRegion;
-        const profileArn = value;
+        const profileArn = value || undefined;
+        if (
+          profileArn &&
+          !profileArn.startsWith("arn:aws:codewhisperer:") &&
+          !profileArn.startsWith("arn:aws:qdeveloper:")
+        ) {
+          setStatus({
+            text: "Invalid Profile ARN (codewhisperer/qdeveloper)",
+            tone: "err",
+          });
+          return;
+        }
         cancelEdit();
         const controller = new AbortController();
         addAbort = controller;
@@ -2064,11 +2153,18 @@ export async function runTui(opts: RunTuiOptions = {}): Promise<void> {
           const { loginWithIdcDevice } = await import(
             "../providers/kiro/auth/login.js"
           );
+          const existing = manager
+            .list("kiro")
+            .filter(
+              (a): a is import("../core/schemas.js").AccountOf<"kiro"> =>
+                a.provider === "kiro",
+            );
           const account = await loginWithIdcDevice(
             {
               startUrl,
               idcRegion,
               profileArn,
+              existingAccounts: existing,
               openBrowser: true,
               signal: controller.signal,
             },
@@ -2177,13 +2273,10 @@ export async function runTui(opts: RunTuiOptions = {}): Promise<void> {
           for (const w of warnings) {
             setStatus({ text: `warn: ${w}`, tone: "warn" });
           }
-          let last = candidates[0];
           for (const account of candidates) {
-            await manager.providerView("kiro").upsertFromOAuth(account);
-            last = account;
+            await finishKiroAccount(account);
           }
-          if (last) {
-            restoreSelectionById("kiro", last.accountId);
+          if (candidates.length > 0) {
             setStatus({
               text: `imported ${candidates.length} from kiro-cli`,
               tone: "ok",
@@ -2576,9 +2669,17 @@ export async function runTui(opts: RunTuiOptions = {}): Promise<void> {
         account.provider === "codex"
           ? (account as CodexAccountMetadata).organizationId
           : undefined;
+      const kiro =
+        account.provider === "kiro"
+          ? (account as KiroAccountMetadata)
+          : undefined;
       const probeArgs = {
         accountId: account.accountId,
         organizationId: orgId,
+        authMethod: kiro?.authMethod,
+        region: kiro?.region,
+        oidcRegion: kiro?.oidcRegion,
+        profileArn: kiro?.profileArn,
       };
 
       const runProbe = async (force: boolean) => {
@@ -3100,14 +3201,25 @@ export async function runTui(opts: RunTuiOptions = {}): Promise<void> {
         return;
       }
       case "add-device":
+        if (activeTab === "kiro") {
+          beginKiroWizard("idc");
+          return;
+        }
         void startAdd("device");
         return;
       case "add-browser":
         if (activeTab === "kiro") {
-          void startAdd("device");
-        } else {
-          void startAdd("browser");
+          beginKiroWizard("idc");
+          return;
         }
+        void startAdd("browser");
+        return;
+      case "add-kiro-idc":
+        if (activeTab !== "kiro") {
+          setStatus({ text: "switch to Kiro tab for Builder ID / IDC", tone: "warn" });
+          return;
+        }
+        beginKiroWizard("idc");
         return;
       case "add-kiro-api-key":
         if (activeTab !== "kiro") {
@@ -3236,8 +3348,19 @@ export async function runTui(opts: RunTuiOptions = {}): Promise<void> {
         const { loginWithIdcDevice } = await import(
           "../providers/kiro/auth/login.js"
         );
+        const existing = manager
+          .list("kiro")
+          .filter(
+            (a): a is import("../core/schemas.js").AccountOf<"kiro"> =>
+              a.provider === "kiro",
+          );
         const account = await loginWithIdcDevice(
-          { openBrowser: true, signal: controller.signal },
+          {
+            openBrowser: true,
+            signal: controller.signal,
+            existingAccounts: existing,
+            reuseSavedIdc: true,
+          },
           (prompt) =>
             paintDevice(T.kiroBright, {
               verificationUri: prompt.verificationUri,

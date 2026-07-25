@@ -26,6 +26,8 @@ describe("Kiro model and effort foundation", () => {
     expect(resolveKiroModel("claude-opus-4-8-thinking")).toBe(
       "claude-opus-4.8",
     );
+    expect(resolveKiroModel("claude-opus-5-thinking")).toBe("claude-opus-5");
+    expect(resolveKiroModel("claude-opus-5")).toBe("claude-opus-5");
     expect(resolveKiroModel("kiro-multi/claude-sonnet-5-thinking")).toBe(
       "claude-sonnet-5",
     );
@@ -33,7 +35,10 @@ describe("Kiro model and effort foundation", () => {
     expect(resolveKiroModel("claude-opus-4-8-thinking-high")).toBe(
       "claude-opus-4.8",
     );
-    expect(() => resolveKiroModel("gpt-5.6-sol")).toThrow(/Unsupported Kiro model/);
+    expect(resolveKiroModel("gpt-5.6-sol-thinking")).toBe("gpt-5.6-sol");
+    expect(resolveKiroModel("gpt-5.6-terra-thinking")).toBe("gpt-5.6-terra");
+    expect(resolveKiroModel("gpt-5.6-luna-thinking")).toBe("gpt-5.6-luna");
+    expect(resolveKiroModel("gpt-5.6-sol")).toBe("gpt-5.6-sol");
     expect(() => resolveKiroModel("unknown-model")).toThrow(/Unsupported Kiro model/);
   });
 
@@ -57,6 +62,7 @@ describe("Kiro model and effort foundation", () => {
     ).toBe("eu-central-1");
     expect(extractRegionFromArn("not-an-arn")).toBeUndefined();
     expect(getContextWindowSize("claude-sonnet-5")).toBe(1_000_000);
+    expect(getContextWindowSize("claude-opus-5")).toBe(1_000_000);
     expect(getContextWindowSize("gpt-5.6-terra")).toBe(272_000);
   });
 });

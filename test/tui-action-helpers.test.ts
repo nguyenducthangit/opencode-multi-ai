@@ -261,6 +261,7 @@ describe("TUI_BINDINGS registry", () => {
       "quit",
       "add-device",
       "add-browser",
+      "add-kiro-idc",
       "add-kiro-api-key",
       "add-kiro-idc-arn",
       "add-kiro-json",
@@ -399,9 +400,9 @@ describe("action menu hierarchy", () => {
       .filter((i) => i.kind === "action")
       .map((i) => (i.kind === "action" ? i.binding.action : ""));
     expect(kiroActions).toEqual([
-      "add-device",
-      "add-kiro-api-key",
+      "add-kiro-idc",
       "add-kiro-idc-arn",
+      "add-kiro-api-key",
       "add-kiro-json",
       "add-kiro-export",
       "add-kiro-cli",

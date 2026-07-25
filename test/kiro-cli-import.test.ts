@@ -3,8 +3,9 @@ import os from "node:os";
 import path from "node:path";
 
 import Database from "libsql";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { AccountOf } from "../lib/core/schemas.js";
 import { readKiroCliCandidates } from "../lib/providers/kiro/auth/kiro-cli-import.js";
 import { readSqliteQuery } from "../lib/providers/kiro/auth/sqlite-reader.js";
 
@@ -108,7 +109,9 @@ describe("Kiro CLI SQLite import", () => {
       );
     });
 
-    const { candidates, warnings } = await readKiroCliCandidates(dbPath);
+    const { candidates, warnings } = await readKiroCliCandidates(dbPath, {
+      enrich: false,
+    });
 
     expect(warnings).toEqual([]);
     expect(candidates).toHaveLength(1);
@@ -144,7 +147,9 @@ describe("Kiro CLI SQLite import", () => {
       );
     });
 
-    const { candidates, warnings } = await readKiroCliCandidates(dbPath);
+    const { candidates, warnings } = await readKiroCliCandidates(dbPath, {
+      enrich: false,
+    });
 
     expect(warnings).toEqual([]);
     expect(candidates).toHaveLength(1);
@@ -181,7 +186,9 @@ describe("Kiro CLI SQLite import", () => {
       );
     });
 
-    const { candidates, warnings } = await readKiroCliCandidates(dbPath);
+    const { candidates, warnings } = await readKiroCliCandidates(dbPath, {
+      enrich: false,
+    });
 
     expect(warnings).toEqual([]);
     expect(candidates).toHaveLength(1);
@@ -193,6 +200,67 @@ describe("Kiro CLI SQLite import", () => {
       credentialSource: "kiro-cli",
     });
     expect(candidates[0].clientId).toBeUndefined();
+  });
+
+  it("gives emailless desktop credentials distinct account ids", async () => {
+    const makeSocialDb = (refreshToken: string) =>
+      createKiroCliDatabase((db) => {
+        db.prepare("INSERT INTO auth_kv (key, value) VALUES (?, ?)").run(
+          "kirocli:social:token",
+          JSON.stringify({
+            refresh_token: refreshToken,
+            region: "us-east-1",
+          }),
+        );
+      });
+
+    const firstDb = await makeSocialDb("social-refresh-token-one");
+    const secondDb = await makeSocialDb("social-refresh-token-two");
+
+    const first = await readKiroCliCandidates(firstDb, { enrich: false });
+    const second = await readKiroCliCandidates(secondDb, { enrich: false });
+
+    expect(first.candidates).toHaveLength(1);
+    expect(second.candidates).toHaveLength(1);
+    expect(first.candidates[0]!.email).toBe("desktop@kiro.local");
+    expect(second.candidates[0]!.email).toBe("desktop@kiro.local");
+    expect(first.candidates[0]!.accountId).not.toBe(
+      second.candidates[0]!.accountId,
+    );
+    // The seed is hashed, never surfaced.
+    expect(first.candidates[0]!.accountId).not.toContain("social-refresh");
+  });
+
+  it("merges enricher warnings and candidate changes", async () => {
+    const dbPath = await createKiroCliDatabase((db) => {
+      db.prepare("INSERT INTO auth_kv (key, value) VALUES (?, ?)").run(
+        "kirocli:social:token",
+        JSON.stringify({
+          access_token: "social-access-token",
+          refresh_token: "social-refresh-token",
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          region: "us-east-1",
+        }),
+      );
+    });
+
+    const enrich = vi.fn(async (candidate: AccountOf<"kiro">) => ({
+      candidate: { ...candidate, email: "probed@example.test", usedCount: 7 },
+      warnings: ["usage probe failed: usage HTTP 500"],
+    }));
+
+    const { candidates, warnings } = await readKiroCliCandidates(dbPath, {
+      enrich,
+    });
+
+    expect(enrich).toHaveBeenCalledTimes(1);
+    expect(warnings).toEqual(["usage probe failed: usage HTTP 500"]);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      email: "probed@example.test",
+      usedCount: 7,
+      credentialSource: "kiro-cli",
+    });
   });
 
   it("skips unsupported GovCloud profile and OIDC regions", async () => {
@@ -219,7 +287,9 @@ describe("Kiro CLI SQLite import", () => {
       );
     });
 
-    const { candidates, warnings } = await readKiroCliCandidates(dbPath);
+    const { candidates, warnings } = await readKiroCliCandidates(dbPath, {
+      enrich: false,
+    });
 
     expect(candidates).toEqual([]);
     expect(warnings.join("\n")).toMatch(
@@ -240,7 +310,9 @@ describe("Kiro CLI SQLite import", () => {
       );
     });
 
-    const { candidates, warnings } = await readKiroCliCandidates(dbPath);
+    const { candidates, warnings } = await readKiroCliCandidates(dbPath, {
+      enrich: false,
+    });
 
     expect(candidates).toEqual([]);
     expect(warnings.join("\n")).toMatch(
@@ -270,7 +342,9 @@ describe("Kiro CLI SQLite import", () => {
       insertState.run("auth.idc.start-url", JSON.stringify("not-a-url"));
     });
 
-    const { candidates, warnings } = await readKiroCliCandidates(dbPath);
+    const { candidates, warnings } = await readKiroCliCandidates(dbPath, {
+      enrich: false,
+    });
 
     expect(warnings).toEqual([]);
     expect(candidates).toHaveLength(1);

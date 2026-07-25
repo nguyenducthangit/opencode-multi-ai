@@ -1,9 +1,12 @@
-import { createHash } from "node:crypto";
-
 import type { AccountOf } from "../../../core/schemas.js";
 import { normalizeKiroRegion } from "../constants.js";
 import { refreshKiroAccount } from "./refresh.js";
 import { buildApiKeyCandidate } from "./api-key.js";
+import {
+  emailFromAccessToken,
+  isPlaceholderKiroEmail,
+  kiroAccountIdentity,
+} from "./enrich.js";
 
 export type KiroCandidate = AccountOf<"kiro">;
 
@@ -26,18 +29,6 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
-}
-
-function identity(
-  email: string,
-  method: string,
-  clientId?: string,
-  profileArn?: string,
-): string {
-  return createHash("sha256")
-    .update(`${email}:${method}:${clientId ?? ""}:${profileArn ?? ""}`)
-    .digest("hex")
-    .slice(0, 24);
 }
 
 function normalizeAuthMethodLabel(raw: string | undefined): string | undefined {
@@ -186,10 +177,19 @@ export async function normalizeCredentialCandidate(
     );
   }
 
-  const email = raw.email ?? `${method}@kiro.local`;
+  const email =
+    raw.email ?? emailFromAccessToken(raw.accessToken) ?? `${method}@kiro.local`;
   let candidate: KiroCandidate = {
     provider: "kiro",
-    accountId: identity(email, method, raw.clientId, raw.profileArn),
+    // Placeholder emails would otherwise collide across every desktop/social
+    // credential; seed the hash with the refresh token (hashed, never stored).
+    accountId: kiroAccountIdentity(
+      email,
+      method,
+      raw.clientId,
+      raw.profileArn,
+      isPlaceholderKiroEmail(email) ? raw.refreshToken : undefined,
+    ),
     email,
     tags: [],
     refreshToken: raw.refreshToken,

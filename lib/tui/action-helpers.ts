@@ -19,6 +19,7 @@ export type TuiAction =
   | "add-browser"
   | "add-codex-json"
   | "add-kiro-api-key"
+  | "add-kiro-idc"
   | "add-kiro-idc-arn"
   | "add-kiro-json"
   | "add-kiro-export"
@@ -82,6 +83,13 @@ export const TUI_BINDINGS: readonly TuiBinding[] = Object.freeze([
     action: "add-browser",
     labelKey: "add_browser",
     descKey: "desc_add_browser",
+    available: true,
+  },
+  {
+    key: "a",
+    action: "add-kiro-idc",
+    labelKey: "add_kiro_idc",
+    descKey: "desc_add_kiro_idc",
     available: true,
   },
   {
@@ -551,9 +559,9 @@ const GROUP_ACTIONS: Record<ActionMenuGroupId, readonly TuiAction[]> = {
 };
 
 const KIRO_ADD_ACTIONS: readonly TuiAction[] = [
-  "add-device",
-  "add-kiro-api-key",
+  "add-kiro-idc",
   "add-kiro-idc-arn",
+  "add-kiro-api-key",
   "add-kiro-json",
   "add-kiro-export",
   "add-kiro-cli",

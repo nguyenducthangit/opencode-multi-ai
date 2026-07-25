@@ -268,8 +268,14 @@ export function createKiroFetch(
       }
     }
 
+    // Include failover-recognized phrases ("quota exceeded" / "resource
+    // exhausted" / "429") so downstream model fallback triggers even when the
+    // 503 status code is stripped from the error surfaced to plugins.
     return new Response(
-      JSON.stringify({ error: "All Kiro accounts exhausted" }),
+      JSON.stringify({
+        error:
+          "All Kiro accounts exhausted (429 quota exceeded / resource exhausted)",
+      }),
       { status: 503, headers: { "content-type": "application/json" } },
     );
   };

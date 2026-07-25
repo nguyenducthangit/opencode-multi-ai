@@ -32,7 +32,11 @@ export type KiroRegion = (typeof KIRO_REGIONS)[number];
 
 export const MODEL_MAPPING: Readonly<Record<string, string>> = {
   "claude-sonnet-5-thinking": "claude-sonnet-5",
+  "claude-opus-5-thinking": "claude-opus-5",
   "claude-opus-4-8-thinking": "claude-opus-4.8",
+  "gpt-5.6-sol-thinking": "gpt-5.6-sol",
+  "gpt-5.6-terra-thinking": "gpt-5.6-terra",
+  "gpt-5.6-luna-thinking": "gpt-5.6-luna",
 };
 
 export const SUPPORTED_MODELS = Object.keys(MODEL_MAPPING);

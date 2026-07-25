@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { exec } from "node:child_process";
 
 import type { AccountOf } from "../../../core/schemas.js";
@@ -12,6 +11,17 @@ import {
 import { buildApiKeyCandidate, validateKiroApiKey } from "./api-key.js";
 import { normalizeCredentialCandidate } from "./credentials-import.js";
 import {
+  emailFromAccessToken,
+  enrichKiroCandidate,
+  kiroAccountIdentity,
+  type KiroEnricher,
+} from "./enrich.js";
+import {
+  findLastIdcAccount,
+  loadKiroIdcDefaults,
+  resolveIdcProfileArn,
+} from "./idc-defaults.js";
+import {
   authorizeKiroIDC,
   pollKiroIDCToken,
   type KiroIDCAuthorization,
@@ -24,6 +34,10 @@ export type KiroIdcLoginInputs = {
   startUrl?: string;
   idcRegion?: string;
   profileArn?: string;
+  /** Prefer last IDC account when inputs are empty (re-auth). */
+  existingAccounts?: ReadonlyArray<KiroCandidate>;
+  /** When true, blank startUrl falls back to last IDC / config before Builder ID. */
+  reuseSavedIdc?: boolean;
   openBrowser?: boolean;
   signal?: AbortSignal;
 };
@@ -77,34 +91,6 @@ export function buildDeviceUrl(startUrl: string, userCode: string): string {
   return url.toString();
 }
 
-function identity(
-  email: string,
-  method: string,
-  clientId?: string,
-  profileArn?: string,
-): string {
-  return createHash("sha256")
-    .update(`${email}:${method}:${clientId ?? ""}:${profileArn ?? ""}`)
-    .digest("hex")
-    .slice(0, 24);
-}
-
-function emailFromAccessToken(accessToken: string | undefined): string | undefined {
-  if (!accessToken) return undefined;
-  try {
-    const parts = accessToken.split(".");
-    if (parts.length !== 3 || !parts[1]) return undefined;
-    const payload = JSON.parse(
-      Buffer.from(parts[1], "base64url").toString("utf8"),
-    ) as Record<string, unknown>;
-    if (typeof payload.email === "string" && payload.email) return payload.email;
-    if (typeof payload.sub === "string" && payload.sub) return payload.sub;
-  } catch {
-    return undefined;
-  }
-  return undefined;
-}
-
 export async function loginWithApiKey(
   apiKey: string,
   region?: string,
@@ -139,7 +125,10 @@ export async function loginWithApiKey(
 export type IdcDeviceSession = {
   auth: KiroIDCAuthorization;
   verificationUrl: string;
+  /** Effective portal start URL used for device auth (may be Builder ID). */
   startUrl: string;
+  /** True when user/config provided a custom Identity Center start URL. */
+  hasCustomStartUrl: boolean;
   oidcRegion: KiroRegion;
   profileArn?: string;
   serviceRegion: KiroRegion;
@@ -148,14 +137,35 @@ export type IdcDeviceSession = {
 export async function beginIdcDeviceLogin(
   inputs: KiroIdcLoginInputs = {},
 ): Promise<IdcDeviceSession> {
+  const defaults = loadKiroIdcDefaults();
+  const invokedWithoutPrompts =
+    inputs.reuseSavedIdc === true ||
+    (!inputs.startUrl?.trim() &&
+      !inputs.idcRegion?.trim() &&
+      !inputs.profileArn?.trim());
+  const savedIdc =
+    invokedWithoutPrompts && inputs.existingAccounts
+      ? findLastIdcAccount(inputs.existingAccounts)
+      : undefined;
+
+  const customStartUrl = normalizeStartUrl(
+    inputs.startUrl || defaults.startUrl || savedIdc?.startUrl,
+  );
   const startUrl =
-    normalizeStartUrl(inputs.startUrl) ?? KIRO_AUTH_SERVICE.BUILDER_ID_START_URL;
-  const oidcRegion = normalizeKiroRegion(inputs.idcRegion);
-  const profileArn = inputs.profileArn?.trim() || undefined;
+    customStartUrl ?? KIRO_AUTH_SERVICE.BUILDER_ID_START_URL;
+  const oidcRegion = normalizeKiroRegion(
+    inputs.idcRegion || defaults.idcRegion || savedIdc?.oidcRegion,
+  );
+  const profileArn = await resolveIdcProfileArn(
+    inputs.profileArn || defaults.profileArn || savedIdc?.profileArn,
+  );
   const serviceRegion =
-    extractRegionFromArn(profileArn) ?? normalizeKiroRegion(undefined);
-  const auth = await authorizeKiroIDC(oidcRegion, startUrl);
-  const verificationUrl = inputs.startUrl
+    extractRegionFromArn(profileArn) ??
+    normalizeKiroRegion(defaults.defaultRegion);
+
+  // Device auth uses custom start URL when set; otherwise Builder ID default.
+  const auth = await authorizeKiroIDC(oidcRegion, customStartUrl);
+  const verificationUrl = customStartUrl
     ? buildDeviceUrl(startUrl, auth.userCode)
     : auth.verificationUriComplete || auth.verificationUrl;
   if (inputs.openBrowser !== false) {
@@ -165,6 +175,7 @@ export async function beginIdcDeviceLogin(
     auth,
     verificationUrl,
     startUrl,
+    hasCustomStartUrl: customStartUrl !== undefined,
     oidcRegion,
     profileArn,
     serviceRegion,
@@ -195,7 +206,12 @@ export async function completeIdcDeviceLogin(
 
   const draft: KiroCandidate = {
     provider: "kiro",
-    accountId: identity(email, "idc", tokens.clientId, session.profileArn),
+    accountId: kiroAccountIdentity(
+      email,
+      "idc",
+      tokens.clientId,
+      session.profileArn,
+    ),
     email,
     tags: [],
     refreshToken: tokens.refreshToken,
@@ -215,7 +231,7 @@ export async function completeIdcDeviceLogin(
     clientId: tokens.clientId,
     clientSecret: tokens.clientSecret,
     profileArn: session.profileArn,
-    startUrl: session.startUrl,
+    startUrl: session.hasCustomStartUrl ? session.startUrl : undefined,
     credentialSource: "login",
   };
 
@@ -225,13 +241,30 @@ export async function completeIdcDeviceLogin(
     usedCount = usage.usedCount;
     limitCount = usage.limitCount;
     usageObservedAt = usage.observedAt;
-  } catch {
-    /* usage is best-effort */
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (session.hasCustomStartUrl && !session.profileArn) {
+      throw new Error(
+        `Missing profile ARN for IAM Identity Center. Set idcProfileArn in multi-ai-settings.json (or idc_profile_arn in ~/.config/opencode/kiro.json), pass Profile ARN in login, or run "kiro-cli profile" once so it can be auto-detected. Original error: ${msg}`,
+      );
+    }
+    if (/FEATURE_NOT_SUPPORTED/i.test(msg)) {
+      // usage probe unsupported for this account/region — keep tokens
+    } else if (!session.hasCustomStartUrl) {
+      // Builder ID: usage is best-effort
+    } else {
+      throw error instanceof Error ? error : new Error(msg);
+    }
   }
 
   return {
     ...draft,
-    accountId: identity(email, "idc", tokens.clientId, session.profileArn),
+    accountId: kiroAccountIdentity(
+      email,
+      "idc",
+      tokens.clientId,
+      session.profileArn,
+    ),
     email,
     usedCount,
     limitCount,
@@ -259,16 +292,36 @@ export async function loginWithIdcDevice(
   return completeIdcDeviceLogin(session, { signal: inputs.signal });
 }
 
+type ImportOptions = {
+  validateRefresh?: boolean;
+  enrich?: false | KiroEnricher;
+};
+
+/** Enrichment is best-effort here; warnings are already non-fatal. */
+async function applyEnrichment(
+  candidate: KiroCandidate,
+  options: ImportOptions | undefined,
+): Promise<KiroCandidate> {
+  const enrich =
+    options?.enrich === false
+      ? undefined
+      : (options?.enrich ?? enrichKiroCandidate);
+  if (!enrich) return candidate;
+  const enriched = await enrich(candidate);
+  return enriched.candidate;
+}
+
 export async function importCredentialsJson(
   raw: string,
-  options?: { validateRefresh?: boolean },
+  options?: ImportOptions,
 ): Promise<KiroCandidate> {
-  return normalizeCredentialCandidate(JSON.parse(raw), options);
+  const candidate = await normalizeCredentialCandidate(JSON.parse(raw), options);
+  return applyEnrichment(candidate, options);
 }
 
 export async function importAccountManagerExport(
   raw: string,
-  options?: { validateRefresh?: boolean },
+  options?: ImportOptions,
 ): Promise<KiroCandidate[]> {
   const payload = JSON.parse(raw) as unknown;
   const root = asRecord(payload);
@@ -296,7 +349,8 @@ export async function importAccountManagerExport(
   });
   const out: KiroCandidate[] = [];
   for (const row of flattened) {
-    out.push(await normalizeCredentialCandidate(row, options));
+    const candidate = await normalizeCredentialCandidate(row, options);
+    out.push(await applyEnrichment(candidate, options));
   }
   return out;
 }

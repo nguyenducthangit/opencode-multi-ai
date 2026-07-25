@@ -4,6 +4,7 @@ const GPT56_MODELS = new Set(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]);
 const XHIGH_CAPABLE_MODELS = new Set([
   "claude-opus-4.7",
   "claude-opus-4.8",
+  "claude-opus-5",
   ...GPT56_MODELS,
 ]);
 const EFFORT_CAPABLE_MODELS = new Set([

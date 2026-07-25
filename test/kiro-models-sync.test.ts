@@ -37,12 +37,29 @@ describe("resolveKiroMultiModels", () => {
     expect(models["gpt-5.6-sol"]).toBeUndefined();
     expect(models["deepseek-3.2"]).toBeUndefined();
 
+    expect(models["gpt-5.6-sol-thinking"]).toMatchObject({
+      limit: { context: 272_000, output: 64_000 },
+    });
+    expect(models["gpt-5.6-terra-thinking"]).toMatchObject({
+      limit: { context: 272_000, output: 64_000 },
+    });
+    expect(models["gpt-5.6-luna-thinking"]).toMatchObject({
+      limit: { context: 272_000, output: 64_000 },
+    });
+
     expect(models["claude-opus-4-8-thinking"]).toMatchObject({
       limit: { context: 200_000, output: 64_000 },
       variants: {
         low: { thinkingConfig: { thinkingBudget: 8_192 } },
         medium: { thinkingConfig: { thinkingBudget: 16_384 } },
         high: { thinkingConfig: { thinkingBudget: 24_576 } },
+        max: { thinkingConfig: { thinkingBudget: 32_768 } },
+      },
+    });
+    expect(models["claude-opus-5-thinking"]).toMatchObject({
+      name: "Claude Opus 5 Thinking",
+      limit: { context: 1_000_000, output: 64_000 },
+      variants: {
         max: { thinkingConfig: { thinkingBudget: 32_768 } },
       },
     });

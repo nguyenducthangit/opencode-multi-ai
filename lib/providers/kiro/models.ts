@@ -84,7 +84,9 @@ export function supportsKiroThinkingMode(model: string): boolean {
 
 export function getContextWindowSize(model: string): number {
   if (model.includes("gpt-5.6")) return 272_000;
-  return model.includes("-1m") || model.includes("claude-sonnet-5")
+  return model.includes("-1m") ||
+    model.includes("claude-sonnet-5") ||
+    model.includes("claude-opus-5")
     ? 1_000_000
     : 200_000;
 }

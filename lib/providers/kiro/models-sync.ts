@@ -19,7 +19,11 @@ export const THINKING_VARIANTS = {
 
 const DISPLAY_NAMES: Readonly<Record<string, string>> = {
   "claude-sonnet-5-thinking": "Claude Sonnet 5 Thinking",
+  "claude-opus-5-thinking": "Claude Opus 5 Thinking",
   "claude-opus-4-8-thinking": "Claude Opus 4.8 Thinking",
+  "gpt-5.6-sol-thinking": "GPT-5.6 Sol Thinking",
+  "gpt-5.6-terra-thinking": "GPT-5.6 Terra Thinking",
+  "gpt-5.6-luna-thinking": "GPT-5.6 Luna Thinking",
 };
 
 function displayName(id: string): string {
@@ -35,7 +39,14 @@ function displayName(id: string): string {
 }
 
 function contextLimit(id: string): number {
-  if (id.includes("-1m") || id.includes("claude-sonnet-5")) return 1_000_000;
+  if (id.includes("gpt-5.6")) return 272_000;
+  if (
+    id.includes("-1m") ||
+    id.includes("claude-sonnet-5") ||
+    id.includes("claude-opus-5")
+  ) {
+    return 1_000_000;
+  }
   return 200_000;
 }
 

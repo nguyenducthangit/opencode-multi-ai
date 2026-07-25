@@ -2,12 +2,14 @@ import fs from "node:fs/promises";
 
 import type { AccountOf } from "../../../core/schemas.js";
 import { normalizeCredentialCandidate } from "./credentials-import.js";
+import { enrichKiroCandidate, type KiroEnricher } from "./enrich.js";
 import { readSqliteQuery } from "./sqlite-reader.js";
 
 export type KiroCandidate = AccountOf<"kiro">;
 
 export async function readLegacyKiroDbCandidates(
   dbPath: string,
+  options?: { enrich?: false | KiroEnricher },
 ): Promise<{ candidates: KiroCandidate[]; warnings: string[] }> {
   await fs.access(dbPath);
   const warnings: string[] = [];
@@ -51,8 +53,10 @@ export async function readLegacyKiroDbCandidates(
         },
         { validateRefresh: false },
       );
-      if (typeof row.id === "string" && row.id) {
-        candidate.accountId = row.id;
+      const explicitId =
+        typeof row.id === "string" && row.id.length > 0 ? row.id : undefined;
+      if (explicitId) {
+        candidate.accountId = explicitId;
       }
       if (typeof row.used_count === "number") candidate.usedCount = row.used_count;
       if (typeof row.limit_count === "number") candidate.limitCount = row.limit_count;
@@ -65,7 +69,19 @@ export async function readLegacyKiroDbCandidates(
         candidate.cooldownReason = "rate-limit";
       }
       candidate.credentialSource = "legacy-db";
-      candidates.push(candidate);
+      const enrich =
+        options?.enrich === false
+          ? undefined
+          : (options?.enrich ?? enrichKiroCandidate);
+      if (!enrich) {
+        candidates.push(candidate);
+      } else {
+        const enriched = await enrich(candidate, {
+          preserveAccountId: explicitId !== undefined,
+        });
+        warnings.push(...enriched.warnings);
+        candidates.push(enriched.candidate);
+      }
     } catch (error) {
       warnings.push(
         `skipped legacy row: ${error instanceof Error ? error.message : String(error)}`,

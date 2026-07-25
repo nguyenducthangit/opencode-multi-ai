@@ -8,6 +8,11 @@ import {
   createDefaultRefreshHandlers,
 } from "../lib/core/accounts.js";
 import {
+  findLastIdcAccount,
+  loadKiroIdcDefaults,
+} from "../lib/providers/kiro/auth/idc-defaults.js";
+import {
+  beginIdcDeviceLogin,
   buildDeviceUrl,
   importAccountManagerExport,
   loginWithApiKey,
@@ -15,6 +20,7 @@ import {
   validateAwsRegionInput,
 } from "../lib/providers/kiro/auth/login.js";
 import { normalizeCredentialCandidate } from "../lib/providers/kiro/auth/credentials-import.js";
+import type { AccountOf } from "../lib/core/schemas.js";
 
 describe("kiro login helpers", () => {
   afterEach(() => {
@@ -113,13 +119,153 @@ describe("kiro login helpers", () => {
           },
         ],
       }),
-      { validateRefresh: false },
+      { validateRefresh: false, enrich: false },
     );
     expect(accounts).toHaveLength(2);
     expect(accounts[0]!.authMethod).toBe("idc");
     expect(accounts[0]!.email).toBe("a@example.com");
     expect(accounts[1]!.authMethod).toBe("api-key");
     expect(accounts[1]!.region).toBe("eu-central-1");
+  });
+
+  it("findLastIdcAccount prefers most recently used IDC with startUrl", () => {
+    const base = {
+      provider: "kiro" as const,
+      tags: [],
+      refreshToken: "rt",
+      accessToken: "at",
+      enabled: true,
+      priority: 0,
+      addedAt: 1,
+      lastSwitchReason: "initial" as const,
+      subscriptionStatus: "active" as const,
+      flaggedForRemoval: false,
+      entitlementBlocked: false,
+      authMethod: "idc" as const,
+      region: "us-east-1" as const,
+      credentialSource: "login" as const,
+    };
+    const older: AccountOf<"kiro"> = {
+      ...base,
+      accountId: "old",
+      email: "old@ex.com",
+      lastUsed: 10,
+      startUrl: "https://old.awsapps.com/start",
+    };
+    const newer: AccountOf<"kiro"> = {
+      ...base,
+      accountId: "new",
+      email: "new@ex.com",
+      lastUsed: 99,
+      startUrl: "https://new.awsapps.com/start",
+      oidcRegion: "eu-central-1",
+      profileArn:
+        "arn:aws:codewhisperer:eu-central-1:123456789012:profile/ABC",
+    };
+    const picked = findLastIdcAccount([older, newer]);
+    expect(picked?.accountId).toBe("new");
+    expect(picked?.startUrl).toContain("new.awsapps.com");
+  });
+
+  it("loadKiroIdcDefaults reads multi-ai-settings kiro section", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "kiro-idc-cfg-"));
+    const settingsPath = path.join(dir, "settings.json");
+    await writeFile(
+      settingsPath,
+      JSON.stringify({
+        kiro: {
+          idcStartUrl: "https://acme.awsapps.com/start",
+          idcRegion: "eu-west-1",
+          idcProfileArn:
+            "arn:aws:codewhisperer:eu-west-1:123456789012:profile/XYZ",
+          defaultRegion: "eu-west-1",
+        },
+      }),
+    );
+    const prev = process.env.MULTI_AI_SETTINGS_PATH;
+    process.env.MULTI_AI_SETTINGS_PATH = settingsPath;
+    try {
+      const defaults = loadKiroIdcDefaults();
+      expect(defaults.startUrl).toBe("https://acme.awsapps.com/start");
+      expect(defaults.idcRegion).toBe("eu-west-1");
+      expect(defaults.profileArn).toContain("profile/XYZ");
+      expect(defaults.defaultRegion).toBe("eu-west-1");
+    } finally {
+      if (prev === undefined) delete process.env.MULTI_AI_SETTINGS_PATH;
+      else process.env.MULTI_AI_SETTINGS_PATH = prev;
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("beginIdcDeviceLogin reuses saved IDC portal when prompts empty", async () => {
+    const registerCalls: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL, init?: RequestInit) => {
+        const href = String(url);
+        if (href.includes("/client/register")) {
+          return new Response(
+            JSON.stringify({ clientId: "cid", clientSecret: "csec" }),
+            { status: 200 },
+          );
+        }
+        if (href.includes("/device_authorization")) {
+          registerCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return new Response(
+            JSON.stringify({
+              verificationUri: "https://device.example/verify",
+              verificationUriComplete: "https://device.example/verify?user_code=AB",
+              userCode: "AB-CD",
+              deviceCode: "dev",
+              interval: 1,
+              expiresIn: 600,
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response("nope", { status: 404 });
+      }),
+    );
+
+    const saved: AccountOf<"kiro"> = {
+      provider: "kiro",
+      accountId: "saved",
+      email: "saved@ex.com",
+      tags: [],
+      refreshToken: "rt",
+      accessToken: "at",
+      enabled: true,
+      priority: 0,
+      addedAt: 1,
+      lastUsed: 50,
+      lastSwitchReason: "initial",
+      subscriptionStatus: "active",
+      flaggedForRemoval: false,
+      entitlementBlocked: false,
+      authMethod: "idc",
+      region: "eu-central-1",
+      oidcRegion: "eu-central-1",
+      startUrl: "https://corp.awsapps.com/start",
+      profileArn:
+        "arn:aws:codewhisperer:eu-central-1:123456789012:profile/SAVED",
+      credentialSource: "login",
+    };
+
+    const session = await beginIdcDeviceLogin({
+      openBrowser: false,
+      reuseSavedIdc: true,
+      existingAccounts: [saved],
+    });
+    expect(session.hasCustomStartUrl).toBe(true);
+    expect(session.startUrl).toContain("corp.awsapps.com");
+    expect(session.oidcRegion).toBe("eu-central-1");
+    expect(session.profileArn).toContain("profile/SAVED");
+    expect(session.verificationUrl).toContain("#/device?user_code=");
+    expect(registerCalls[0]).toEqual(
+      expect.objectContaining({
+        startUrl: "https://corp.awsapps.com/start",
+      }),
+    );
   });
 });
 
@@ -136,7 +282,7 @@ describe("kiro plugin auth methods", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("registers five OpenCode auth methods matching source kiro-auth", async () => {
+  it("registers seven OpenCode auth methods (kiro-auth five + kiro-cli + legacy-db)", async () => {
     const {
       getAccountManager,
       resetAccountManager,
@@ -157,7 +303,7 @@ describe("kiro plugin auth methods", () => {
       });
       expect(hooks.auth?.provider).toBe("kiro-multi");
       const methods = hooks.auth?.methods ?? [];
-      expect(methods).toHaveLength(5);
+      expect(methods).toHaveLength(7);
       const labels = methods.map((m) => m.label);
       expect(labels).toEqual([
         "Kiro API Key",
@@ -165,8 +311,10 @@ describe("kiro plugin auth methods", () => {
         "IAM Identity Center with Profile ARN",
         "Import account from credentials JSON",
         "Import accounts from Kiro Account Manager export",
+        "Import from kiro-cli DB",
+        "Import from legacy kiro.db",
       ]);
-      expect(methods.filter((m) => m.type === "api")).toHaveLength(3);
+      expect(methods.filter((m) => m.type === "api")).toHaveLength(5);
       expect(methods.filter((m) => m.type === "oauth")).toHaveLength(2);
 
       const api = methods.find((m) => m.label === "Kiro API Key");

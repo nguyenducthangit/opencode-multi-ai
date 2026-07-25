@@ -1,4 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin";
+import os from "node:os";
+import path from "node:path";
 
 import { toKiroFetchManager } from "../core/account-rotation.js";
 import { getAccountManager } from "../core/accounts.js";
@@ -6,6 +8,12 @@ import { logger } from "../core/logger.js";
 import { createProviderFetch } from "../core/provider-fetch.js";
 import { createKiroAdapter } from "../providers/kiro/adapter.js";
 import { bootstrapHostAuthIfNeeded } from "../providers/codex/auth/host-auth.js";
+import {
+  defaultKiroCliDbPath,
+  readKiroCliCandidates,
+} from "../providers/kiro/auth/kiro-cli-import.js";
+import { readLegacyKiroDbCandidates } from "../providers/kiro/auth/legacy-db-import.js";
+import { loadKiroIdcDefaults } from "../providers/kiro/auth/idc-defaults.js";
 import {
   beginIdcDeviceLogin,
   completeIdcDeviceLogin,
@@ -23,6 +31,19 @@ import {
 } from "../providers/kiro/constants.js";
 import { resolveKiroMultiModels } from "../providers/kiro/models-sync.js";
 
+function defaultLegacyKiroDbPath(): string {
+  return path.join(os.homedir(), ".config", "opencode", "kiro.db");
+}
+
+function expandUserPath(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === "~") return os.homedir();
+  if (trimmed.startsWith("~/")) {
+    return path.join(os.homedir(), trimmed.slice(2));
+  }
+  return trimmed;
+}
+
 const plugin: Plugin = async () => {
   logger.debug("multi-kiro plugin loading (server entry)");
   bootstrapHostAuthIfNeeded(PROVIDER_ID, DUMMY_API_KEY);
@@ -34,6 +55,10 @@ const plugin: Plugin = async () => {
     toKiroFetchManager(manager),
   );
   const view = manager.providerView("kiro");
+  const idcDefaults = loadKiroIdcDefaults();
+  const configStartUrl = idcDefaults.startUrl;
+  const configRegion = idcDefaults.idcRegion;
+  const configProfileArn = idcDefaults.profileArn;
 
   return {
     config: async (cfg) => {
@@ -142,8 +167,9 @@ const plugin: Plugin = async () => {
             {
               type: "text",
               key: "start_url",
-              message:
-                "IAM Identity Center Start URL (leave blank for AWS Builder ID)",
+              message: configStartUrl
+                ? `IAM Identity Center Start URL (current: ${configStartUrl}, leave blank to keep)`
+                : "IAM Identity Center Start URL (leave blank for AWS Builder ID)",
               placeholder: "https://your-company.awsapps.com/start",
               validate: (value: string) => {
                 if (!value) return undefined;
@@ -159,7 +185,9 @@ const plugin: Plugin = async () => {
               type: "text",
               key: "idc_region",
               message:
-                "IAM Identity Center region (sso_region) (leave blank for us-east-1)",
+                configRegion && configRegion !== "us-east-1"
+                  ? `IAM Identity Center region (sso_region) (current: ${configRegion}, leave blank to keep)`
+                  : "IAM Identity Center region (sso_region) (leave blank for us-east-1)",
               placeholder: "us-east-1",
               validate: (value: string) => {
                 if (!value) return undefined;
@@ -170,9 +198,17 @@ const plugin: Plugin = async () => {
             },
           ],
           async authorize(inputs) {
+            const existing = view
+              .list()
+              .filter(
+                (a): a is import("../core/schemas.js").AccountOf<"kiro"> =>
+                  a.provider === "kiro",
+              );
             const session = await beginIdcDeviceLogin({
               startUrl: inputs?.start_url,
               idcRegion: inputs?.idc_region,
+              existingAccounts: existing,
+              reuseSavedIdc: !inputs || Object.keys(inputs).length === 0,
               openBrowser: true,
             });
             return {
@@ -210,8 +246,9 @@ const plugin: Plugin = async () => {
             {
               type: "text",
               key: "start_url",
-              message:
-                "IAM Identity Center Start URL (leave blank for AWS Builder ID)",
+              message: configStartUrl
+                ? `IAM Identity Center Start URL (current: ${configStartUrl}, leave blank to keep)`
+                : "IAM Identity Center Start URL (leave blank for AWS Builder ID)",
               placeholder: "https://your-company.awsapps.com/start",
               validate: (value: string) => {
                 if (!value) return undefined;
@@ -227,7 +264,9 @@ const plugin: Plugin = async () => {
               type: "text",
               key: "idc_region",
               message:
-                "IAM Identity Center region (sso_region) (leave blank for us-east-1)",
+                configRegion && configRegion !== "us-east-1"
+                  ? `IAM Identity Center region (sso_region) (current: ${configRegion}, leave blank to keep)`
+                  : "IAM Identity Center region (sso_region) (leave blank for us-east-1)",
               placeholder: "us-east-1",
               validate: (value: string) => {
                 if (!value) return undefined;
@@ -239,11 +278,13 @@ const plugin: Plugin = async () => {
             {
               type: "text",
               key: "profile_arn",
-              message:
-                "Profile ARN (e.g. arn:aws:codewhisperer:eu-central-1:428597928572:profile/HE7XVERQ9VXW)",
+              message: configProfileArn
+                ? `Profile ARN (current: ${configProfileArn}, leave blank to keep)`
+                : "Profile ARN (e.g. arn:aws:codewhisperer:eu-central-1:428597928572:profile/HE7XVERQ9VXW)",
               placeholder:
                 "arn:aws:codewhisperer:us-east-1:123456789012:profile/XXXXXXXXXX",
               validate: (value: string) => {
+                if (!value && configProfileArn) return undefined;
                 if (!value) return "Profile ARN is required for this method";
                 return value.startsWith("arn:aws:codewhisperer:") ||
                   value.startsWith("arn:aws:qdeveloper:")
@@ -253,10 +294,18 @@ const plugin: Plugin = async () => {
             },
           ],
           async authorize(inputs) {
+            const existing = view
+              .list()
+              .filter(
+                (a): a is import("../core/schemas.js").AccountOf<"kiro"> =>
+                  a.provider === "kiro",
+              );
             const session = await beginIdcDeviceLogin({
               startUrl: inputs?.start_url,
               idcRegion: inputs?.idc_region,
-              profileArn: inputs?.profile_arn,
+              profileArn: inputs?.profile_arn || configProfileArn,
+              existingAccounts: existing,
+              reuseSavedIdc: !inputs || Object.keys(inputs).length === 0,
               openBrowser: true,
             });
             return {
@@ -379,6 +428,100 @@ const plugin: Plugin = async () => {
             } catch (error) {
               logger.error(
                 `kiro export import failed: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+              return { type: "failed" as const };
+            }
+          },
+        },
+        {
+          type: "api",
+          label: "Import from kiro-cli DB",
+          prompts: [
+            {
+              type: "text",
+              key: "db_path",
+              message: `Path to kiro-cli data.sqlite3 (leave blank for default: ${defaultKiroCliDbPath()})`,
+              placeholder: defaultKiroCliDbPath(),
+            },
+          ],
+          async authorize(inputs) {
+            try {
+              const dbPath = inputs?.db_path?.trim()
+                ? expandUserPath(inputs.db_path)
+                : defaultKiroCliDbPath();
+              const { candidates, warnings } =
+                await readKiroCliCandidates(dbPath);
+              for (const w of warnings) {
+                logger.warn(`kiro-cli import: ${w}`);
+              }
+              if (candidates.length === 0) return { type: "failed" as const };
+              let first = candidates[0]!;
+              for (const account of candidates) {
+                await view.upsertFromOAuth(account);
+                first = account;
+              }
+              return {
+                type: "success" as const,
+                key: first.accessToken || first.refreshToken,
+                provider: PROVIDER_ID,
+                metadata: {
+                  email: first.email ?? "",
+                  imported: String(candidates.length),
+                  source: "kiro-cli",
+                },
+              };
+            } catch (error) {
+              logger.error(
+                `kiro-cli import failed: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+              return { type: "failed" as const };
+            }
+          },
+        },
+        {
+          type: "api",
+          label: "Import from legacy kiro.db",
+          prompts: [
+            {
+              type: "text",
+              key: "db_path",
+              message: `Path to legacy opencode-kiro-auth kiro.db (leave blank for default: ${defaultLegacyKiroDbPath()})`,
+              placeholder: defaultLegacyKiroDbPath(),
+            },
+          ],
+          async authorize(inputs) {
+            try {
+              const dbPath = inputs?.db_path?.trim()
+                ? expandUserPath(inputs.db_path)
+                : defaultLegacyKiroDbPath();
+              const { candidates, warnings } =
+                await readLegacyKiroDbCandidates(dbPath);
+              for (const w of warnings) {
+                logger.warn(`legacy kiro.db import: ${w}`);
+              }
+              if (candidates.length === 0) return { type: "failed" as const };
+              let first = candidates[0]!;
+              for (const account of candidates) {
+                await view.upsertFromOAuth(account);
+                first = account;
+              }
+              return {
+                type: "success" as const,
+                key: first.accessToken || first.refreshToken,
+                provider: PROVIDER_ID,
+                metadata: {
+                  email: first.email ?? "",
+                  imported: String(candidates.length),
+                  source: "legacy-db",
+                },
+              };
+            } catch (error) {
+              logger.error(
+                `legacy kiro.db import failed: ${
                   error instanceof Error ? error.message : String(error)
                 }`,
               );

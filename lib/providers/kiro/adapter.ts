@@ -5,6 +5,7 @@ import type {
 import {
   DUMMY_API_KEY,
   KIRO_BASE_URL,
+  normalizeKiroRegion,
   PROVIDER_ID,
 } from "./constants.js";
 import { resolveKiroMultiModels } from "./models-sync.js";
@@ -18,6 +19,19 @@ import type {
 export type KiroAdapterOptions = {
   accountSelectionStrategy?: AccountSelectionStrategy;
 };
+
+type KiroAuthMethod = AccountOf<"kiro">["authMethod"];
+
+const KIRO_AUTH_METHODS: readonly KiroAuthMethod[] = [
+  "api-key",
+  "desktop",
+  "idc",
+  "external-idp",
+];
+
+function narrowKiroAuthMethod(value: string | undefined): KiroAuthMethod {
+  return KIRO_AUTH_METHODS.find((method) => method === value) ?? "desktop";
+}
 
 export function createKiroAdapter(
   options: KiroAdapterOptions = {},
@@ -82,8 +96,12 @@ export function createKiroAdapter(
         subscriptionStatus: "active",
         flaggedForRemoval: false,
         entitlementBlocked: false,
-        authMethod: "desktop",
-        region: "us-east-1",
+        authMethod: narrowKiroAuthMethod(account.authMethod),
+        region: normalizeKiroRegion(account.region),
+        oidcRegion: account.oidcRegion
+          ? normalizeKiroRegion(account.oidcRegion)
+          : undefined,
+        profileArn: account.profileArn,
       };
       const snap = await fetchKiroUsageLimits(stub, accessToken);
       return { ...snap };

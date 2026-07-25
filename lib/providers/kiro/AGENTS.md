@@ -9,7 +9,7 @@ Provider id `kiro-multi`, kind `kiro`, npm `@ai-sdk/openai-compatible`.
 
 Custom transport (not pure HTTP rotation): OpenAI-compat body → CodeWhisperer SDK stream → SSE out. Adapter: `createKiroAdapter` / `kiroAdapter` (`TransportProviderAdapter`, `transport.kind: "custom"`, `createFetch` → `createKiroFetch`).
 
-Auth methods: IDC device, desktop, credentials import, API key. Usage snapshot: `usedCount` / `limitCount` via `recordKiroUsage`. Selection: `sticky` | `round-robin` | `lowest-usage`.
+Auth methods (plugin login): API key, Builder ID/IDC, IDC+Profile ARN, credentials JSON, Account Manager export, kiro-cli DB, legacy kiro.db. Usage snapshot: `usedCount` / `limitCount` via `recordKiroUsage`. Selection: `sticky` | `round-robin` | `lowest-usage`.
 
 Plugin entry: `lib/plugin/kiro.ts`. CLI force: `op-kiro`.
 

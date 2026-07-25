@@ -286,7 +286,7 @@ function buildSharedTools(
             ? "How to add another ChatGPT/Codex account to the pool " +
               "(OAuth device/browser, or JSON import like 9router / Codex auth.json)."
             : "How to add another Kiro account to the pool " +
-              "(IDC device OAuth, API key ksk_*, JSON credentials, or kiro-cli DB import).",
+              "(IDC device OAuth, API key ksk_*, JSON credentials, kiro-cli DB, or legacy kiro.db).",
       args: {},
       async execute() {
         return addHelp(view.list().length);

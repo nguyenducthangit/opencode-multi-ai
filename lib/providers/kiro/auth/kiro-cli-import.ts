@@ -5,6 +5,7 @@ import path from "node:path";
 import type { AccountOf } from "../../../core/schemas.js";
 import { isValidKiroRegion, normalizeKiroRegion } from "../constants.js";
 import { normalizeCredentialCandidate } from "./credentials-import.js";
+import { enrichKiroCandidate, type KiroEnricher } from "./enrich.js";
 import { readSqliteQuery, sqliteValueToString } from "./sqlite-reader.js";
 
 export type KiroCandidate = AccountOf<"kiro">;
@@ -165,6 +166,32 @@ function readProfileArn(value: string | undefined): string | undefined {
 
   const rawProfileArn = parsed ? asString(parsed.value) : asString(value);
   return sanitizeProfileArn(rawProfileArn);
+}
+
+/** Active CodeWhisperer/Q profile ARN from kiro-cli state (if present). */
+export async function readActiveProfileArnFromKiroCli(
+  dbPath: string = defaultKiroCliDbPath(),
+): Promise<string | undefined> {
+  try {
+    await fs.access(dbPath);
+  } catch {
+    return undefined;
+  }
+  try {
+    const state = await readSqliteQuery(
+      dbPath,
+      `SELECT key, value FROM state WHERE key = ?`,
+      ["api.codewhisperer.profile"],
+    );
+    for (const row of state.rows) {
+      const value = sqliteValueToString(row.value);
+      const arn = readProfileArn(value);
+      if (arn) return arn;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
 }
 
 function tokenRefreshToken(token: JsonRecord): string | undefined {
@@ -340,6 +367,7 @@ function assertSupportedCredentialRegions(credential: KiroCliCredential): void {
 
 export async function readKiroCliCandidates(
   dbPath = defaultKiroCliDbPath(),
+  options?: { enrich?: false | KiroEnricher },
 ): Promise<{ candidates: KiroCandidate[]; warnings: string[] }> {
   await fs.access(dbPath);
   const warnings: string[] = [];
@@ -417,7 +445,17 @@ export async function readKiroCliCandidates(
       { validateRefresh: false },
     );
     candidate.credentialSource = "kiro-cli";
-    candidates.push(candidate);
+    const enrich =
+      options?.enrich === false
+        ? undefined
+        : (options?.enrich ?? enrichKiroCandidate);
+    if (!enrich) {
+      candidates.push(candidate);
+    } else {
+      const enriched = await enrich(candidate);
+      warnings.push(...enriched.warnings);
+      candidates.push(enriched.candidate);
+    }
   } catch (error) {
     warnings.push(
       `skipped kiro-cli credentials: ${
