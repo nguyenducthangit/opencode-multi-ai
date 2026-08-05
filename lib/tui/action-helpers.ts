@@ -64,11 +64,22 @@ export type TuiBinding = {
   readonly descKey: string;
   /** When false, footer/help still list it but UI may soft-hide. */
   readonly available: boolean;
+  /**
+   * Providers that advertise this binding in footer / help / action menu.
+   * Omit = all three. Key handlers may still decode globally; runAction guards.
+   */
+  readonly providers?: readonly ProviderKind[];
 };
+
+/** xAI + Codex share device/browser OAuth add flows. */
+const XAI_CODEX: readonly ProviderKind[] = ["xai", "codex"];
+const CODEX_ONLY: readonly ProviderKind[] = ["codex"];
+const KIRO_ONLY: readonly ProviderKind[] = ["kiro"];
 
 /**
  * Canonical binding registry for footer + help generation.
  * Order is display order. Frozen so callers cannot mutate.
+ * Provider-scoped entries are hidden on other agent tabs.
  */
 export const TUI_BINDINGS: readonly TuiBinding[] = Object.freeze([
   {
@@ -77,6 +88,7 @@ export const TUI_BINDINGS: readonly TuiBinding[] = Object.freeze([
     labelKey: "add_device",
     descKey: "desc_add_device",
     available: true,
+    providers: XAI_CODEX,
   },
   {
     key: "A",
@@ -84,6 +96,7 @@ export const TUI_BINDINGS: readonly TuiBinding[] = Object.freeze([
     labelKey: "add_browser",
     descKey: "desc_add_browser",
     available: true,
+    providers: XAI_CODEX,
   },
   {
     key: "a",
@@ -91,6 +104,7 @@ export const TUI_BINDINGS: readonly TuiBinding[] = Object.freeze([
     labelKey: "add_kiro_idc",
     descKey: "desc_add_kiro_idc",
     available: true,
+    providers: KIRO_ONLY,
   },
   {
     key: "i",
@@ -98,6 +112,7 @@ export const TUI_BINDINGS: readonly TuiBinding[] = Object.freeze([
     labelKey: "add_kiro_api_key",
     descKey: "desc_add_kiro_api_key",
     available: true,
+    providers: KIRO_ONLY,
   },
   {
     key: "I",
@@ -105,6 +120,7 @@ export const TUI_BINDINGS: readonly TuiBinding[] = Object.freeze([
     labelKey: "add_kiro_idc_arn",
     descKey: "desc_add_kiro_idc_arn",
     available: true,
+    providers: KIRO_ONLY,
   },
   {
     key: "o",
@@ -112,6 +128,7 @@ export const TUI_BINDINGS: readonly TuiBinding[] = Object.freeze([
     labelKey: "add_codex_json",
     descKey: "desc_add_codex_json",
     available: true,
+    providers: CODEX_ONLY,
   },
   {
     key: "o",
@@ -119,6 +136,7 @@ export const TUI_BINDINGS: readonly TuiBinding[] = Object.freeze([
     labelKey: "add_kiro_json",
     descKey: "desc_add_kiro_json",
     available: true,
+    providers: KIRO_ONLY,
   },
   {
     key: "O",
@@ -126,6 +144,7 @@ export const TUI_BINDINGS: readonly TuiBinding[] = Object.freeze([
     labelKey: "add_kiro_export",
     descKey: "desc_add_kiro_export",
     available: true,
+    providers: KIRO_ONLY,
   },
   {
     key: "c",
@@ -133,6 +152,7 @@ export const TUI_BINDINGS: readonly TuiBinding[] = Object.freeze([
     labelKey: "add_kiro_cli",
     descKey: "desc_add_kiro_cli",
     available: true,
+    providers: KIRO_ONLY,
   },
   {
     key: "s",
@@ -280,6 +300,7 @@ export const TUI_BINDINGS: readonly TuiBinding[] = Object.freeze([
     labelKey: "codex_fast",
     descKey: "desc_codex_fast",
     available: true,
+    providers: CODEX_ONLY,
   },
   {
     key: "?",
@@ -296,6 +317,40 @@ export const TUI_BINDINGS: readonly TuiBinding[] = Object.freeze([
     available: true,
   },
 ] as const satisfies readonly TuiBinding[]);
+
+/** True when the binding is available and in-scope for the active agent tab. */
+export function bindingAppliesTo(
+  binding: TuiBinding,
+  provider?: ProviderKind,
+): boolean {
+  if (!binding.available) return false;
+  if (!provider || !binding.providers) return true;
+  return binding.providers.includes(provider);
+}
+
+/** All available bindings for a provider (no key dedupe). */
+export function bindingsForProvider(
+  provider?: ProviderKind,
+): readonly TuiBinding[] {
+  return TUI_BINDINGS.filter((b) => bindingAppliesTo(b, provider));
+}
+
+/**
+ * Footer / compact help: one entry per key for this provider.
+ * Registry order wins when two actions share a key (they never share a provider).
+ */
+export function footerBindingsForProvider(
+  provider: ProviderKind,
+): readonly TuiBinding[] {
+  const seen = new Set<string>();
+  const out: TuiBinding[] = [];
+  for (const b of bindingsForProvider(provider)) {
+    if (seen.has(b.key)) continue;
+    seen.add(b.key);
+    out.push(b);
+  }
+  return out;
+}
 
 export type ConfirmationState =
   | { kind: "none" }
@@ -625,8 +680,22 @@ export const ACTION_MENU_GROUP_META: Record<
   },
 };
 
-function bindingForAction(action: TuiAction): TuiBinding | undefined {
-  return TUI_BINDINGS.find((b) => b.action === action && b.available);
+function bindingForAction(
+  action: TuiAction,
+  provider?: ProviderKind,
+): TuiBinding | undefined {
+  return TUI_BINDINGS.find(
+    (b) => b.action === action && bindingAppliesTo(b, provider),
+  );
+}
+
+/** Shortcut chord string for the Add group on the active agent. */
+export function addGroupKeysForProvider(
+  provider: ProviderKind | undefined,
+): string {
+  if (provider === "kiro") return "a i I o O c";
+  if (provider === "codex") return "a A o";
+  return "a A";
 }
 
 export function createActionMenuLevel(): ActionMenuLevel {
@@ -654,11 +723,7 @@ export function actionMenuItems(
     for (const id of Object.keys(GROUP_ACTIONS) as ActionMenuGroupId[]) {
       const meta = ACTION_MENU_GROUP_META[id];
       const keys =
-        id === "add" && provider === "kiro"
-          ? "a i I o O c"
-          : id === "add" && provider === "codex"
-            ? "a A o"
-            : meta.keys;
+        id === "add" ? addGroupKeysForProvider(provider) : meta.keys;
       const descKey =
         id === "add" && provider === "kiro"
           ? "menu_desc_add_kiro"
@@ -674,7 +739,7 @@ export function actionMenuItems(
       });
     }
     for (const action of MAIN_TOP_ACTIONS) {
-      const binding = bindingForAction(action);
+      const binding = bindingForAction(action, provider);
       if (binding) items.push({ kind: "top", action, binding });
     }
     return items;
@@ -686,7 +751,7 @@ export function actionMenuItems(
       ? addActionsForProvider(provider)
       : GROUP_ACTIONS[level.group];
   for (const action of actions) {
-    const binding = bindingForAction(action);
+    const binding = bindingForAction(action, provider);
     if (binding) items.push({ kind: "action", binding });
   }
   return items;

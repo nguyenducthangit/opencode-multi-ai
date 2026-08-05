@@ -9,6 +9,7 @@
 import type {
   BuildHeadersContext,
   Classification,
+  ClientErrorRewriteContext,
   HttpTransportAdapter,
   TransportProviderAdapter,
   RecordSuccessContext,
@@ -16,6 +17,7 @@ import type {
   TransformBodyContext,
 } from "../../core/adapter.js";
 import { formatUntil } from "../../core/format-time.js";
+import { logger } from "../../core/logger.js";
 import { accountDisplayName } from "../../core/tui-status.js";
 import {
   CODEX_BASE_URL,
@@ -32,7 +34,11 @@ import {
 } from "./request/classify-error.js";
 import { rewriteUrlForCodex } from "./request/codex-url.js";
 import { createCodexHeaders } from "./request/codex-headers.js";
-import { transformCodexRequestInit } from "./request/body-transform.js";
+import {
+  isServiceTierRejected,
+  stripServiceTierFromBody,
+  transformCodexRequestInit,
+} from "./request/body-transform.js";
 import {
   fetchCodexUsage,
   isWindowDisabled,
@@ -44,7 +50,10 @@ import {
   CODEX_PROVIDER_DEFAULT_OPTIONS,
   resolveCodexMultiModels,
 } from "./models-sync.js";
-import { getCodexFastMode } from "../../core/codex-fast-mode.js";
+import {
+  getCodexFastMode,
+  setCodexFastMode,
+} from "../../core/codex-fast-mode.js";
 import type { CodexBodyTransformOptions } from "./request/body-transform.js";
 
 function sessionOptionsToBody(
@@ -98,6 +107,30 @@ function usageLine(
       ? ` · resets ${formatUntil(resetAt, now)}`
       : "";
   return `${label}: ${left} (${win})${until}`;
+}
+
+/**
+ * One-shot body rewrite for a client-error the Codex backend explains:
+ * `service_tier: fast` is rejected ("Unsupported service_tier: fast") on
+ * models/accounts that do not support ChatGPT Fast mode. Strip the tier and
+ * retry once in standard mode. Also auto-disables Fast mode so later requests
+ * do not keep paying the extra round-trip.
+ */
+function codexClientErrorRewrite(
+  ctx: ClientErrorRewriteContext,
+  init: RequestInit | undefined,
+): RequestInit | undefined {
+  if (!isServiceTierRejected(ctx.status, ctx.bodyText)) return undefined;
+  if (!init || typeof init.body !== "string") return undefined;
+  const next = stripServiceTierFromBody(init.body);
+  if (next === null) return undefined;
+  if (getCodexFastMode()) {
+    setCodexFastMode(false);
+    logger.warn(
+      "ChatGPT Codex rejected service_tier=fast; fast mode auto-disabled, request retried in standard tier",
+    );
+  }
+  return { ...init, body: next };
 }
 
 async function recordCodexSuccess(ctx: RecordSuccessContext): Promise<void> {
@@ -184,6 +217,8 @@ export const codexAdapter: TransportProviderAdapter & HttpTransportAdapter = {
   classifyThrownError(err: unknown): Classification {
     return classifyCodexThrownError(err);
   },
+
+  retryOnClientError: codexClientErrorRewrite,
 
   recordSuccess: recordCodexSuccess,
 
@@ -328,6 +363,7 @@ export const codexAdapter: TransportProviderAdapter & HttpTransportAdapter = {
     classifyThrownError(err: unknown): Classification {
       return classifyCodexThrownError(err);
     },
+    retryOnClientError: codexClientErrorRewrite,
     recordSuccess: recordCodexSuccess,
   },
 };

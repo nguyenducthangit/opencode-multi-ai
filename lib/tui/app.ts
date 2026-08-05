@@ -106,11 +106,11 @@ import {
   isStaleResult,
 } from "./tabs.js";
 import {
-  TUI_BINDINGS,
   actionMenuBack,
   actionMenuItems,
   actionMenuSelectValue,
   createActionMenuLevel,
+  footerBindingsForProvider,
   openActionMenuGroup,
   advanceConfirmation,
   clearConfirmation,
@@ -484,7 +484,7 @@ function joinChunks(chunks: TextChunk[]): StyledText {
   return new StyledText(chunks);
 }
 
-function styledBrand(): StyledText {
+function styledBrand(activeTab: TuiTab): StyledText {
   const chunks: TextChunk[] = [];
   chunks.push(bold(fg(T.codexBright)("◈")));
   chunks.push(fg(T.brandSep)("·"));
@@ -507,14 +507,17 @@ function styledBrand(): StyledText {
   chunks.push(fg(T.key)("m"));
   chunks.push(fg(T.textDim)(":"));
   chunks.push(fg(T.cooling)(selectionStrategyLabel(getSelectionStrategy())));
-  chunks.push(fg(T.textDim)("  ·  "));
-  chunks.push(fg(T.key)("F"));
-  chunks.push(fg(T.textDim)(":"));
-  chunks.push(
-    fg(getCodexFastMode() ? T.ready : T.textDim)(
-      `codex ${codexFastModeLabel()}`,
-    ),
-  );
+  // Codex Fast only applies to codex-multi inference — hide chip on other agents.
+  if (activeTab === "codex") {
+    chunks.push(fg(T.textDim)("  ·  "));
+    chunks.push(fg(T.key)("F"));
+    chunks.push(fg(T.textDim)(":"));
+    chunks.push(
+      fg(getCodexFastMode() ? T.ready : T.textDim)(
+        `codex ${codexFastModeLabel()}`,
+      ),
+    );
+  }
   return joinChunks(chunks);
 }
 
@@ -643,15 +646,9 @@ function styledHints(
   return t`${fg(T.key)("↑↓")}${fg(T.textDim)(" select  ")}${fg(T.key)("s")}${fg(T.textDim)(" sticky  ")}${fg(T.key)("r")}${fg(T.textDim)(" refresh  ")}${fg(T.key)("g")}${fg(T.textDim)(" lang  ")}${fg(T.key)("q")}${fg(T.textDim)(" quit")}${fg(T.cooling)(live)}`;
 }
 
-function styledFooter(): StyledText {
+function styledFooter(activeTab: TuiTab): StyledText {
   const chunks: TextChunk[] = [];
-  const seenKeys = new Set<string>();
-  const shown = TUI_BINDINGS.filter((b) => {
-    if (!b.available) return false;
-    if (seenKeys.has(b.key)) return false;
-    seenKeys.add(b.key);
-    return true;
-  });
+  const shown = footerBindingsForProvider(activeTab);
   for (let i = 0; i < shown.length; i++) {
     const b = shown[i]!;
     if (i > 0) chunks.push(fg(T.textDim)("  "));
@@ -666,6 +663,7 @@ function styledFooter(): StyledText {
 function styledHelp(activeTab: TuiTab, locale: Locale): StyledText {
   void locale;
   const hue = providerHue(activeTab);
+  const agentLabel = TAB_LABELS[activeTab];
   const chunks: TextChunk[] = [
     bold(fg(T.codexBright)("◈")),
     fg(T.brandSep)("·"),
@@ -677,11 +675,13 @@ function styledHelp(activeTab: TuiTab, locale: Locale): StyledText {
     fg(T.textDim)("  "),
     bold(fg(T.brandOp)("OpenCode Multi AI")),
     fg(T.text)("\n"),
-    fg(T.textDim)("  One pool · three providers · s = ACTIVE + list #1"),
+    fg(T.textDim)(
+      `  ${agentLabel} shortcuts · s = ACTIVE + list #1 · 1/2/3 tabs`,
+    ),
     fg(T.text)("\n"),
     fg(T.textDim)("─".repeat(40)),
     fg(T.text)("\n"),
-    bold(fg(hue.bright)(tr("how_to_add"))),
+    bold(fg(hue.bright)(`${tr("how_to_add")} · ${agentLabel}`)),
     fg(T.text)("\n"),
     fg(T.textDim)("─".repeat(40)),
     fg(T.text)("\n"),
@@ -701,17 +701,29 @@ function styledHelp(activeTab: TuiTab, locale: Locale): StyledText {
       fg(T.textDim)("  op-codex import --json '{...}'"),
     );
     chunks.push(fg(T.text)("\n\n"));
+  } else if (activeTab === "xai") {
+    chunks.push(bold(fg(hue.bright)("xAI OAuth")));
+    chunks.push(fg(T.text)("\n"));
+    chunks.push(fg(T.textDim)("  a  Device code login"));
+    chunks.push(fg(T.text)("\n"));
+    chunks.push(fg(T.textDim)("  A  Browser OAuth"));
+    chunks.push(fg(T.text)("\n\n"));
+  } else if (activeTab === "kiro") {
+    chunks.push(bold(fg(hue.bright)("Kiro add methods")));
+    chunks.push(fg(T.text)("\n"));
+    chunks.push(fg(T.textDim)("  a  Builder ID / IDC device"));
+    chunks.push(fg(T.text)("\n"));
+    chunks.push(fg(T.textDim)("  I  IDC + Profile ARN"));
+    chunks.push(fg(T.text)("\n"));
+    chunks.push(fg(T.textDim)("  i  API key (ksk_…)"));
+    chunks.push(fg(T.text)("\n"));
+    chunks.push(fg(T.textDim)("  o  Credentials JSON · O export · c kiro-cli"));
+    chunks.push(fg(T.text)("\n\n"));
   }
-  {
-    const seenHelpKeys = new Set<string>();
-    for (const b of TUI_BINDINGS) {
-      if (!b.available) continue;
-      if (seenHelpKeys.has(b.key)) continue;
-      seenHelpKeys.add(b.key);
-      chunks.push(fg(T.key)(b.key.padEnd(4)));
-      chunks.push(fg(T.value)(tr(b.labelKey)));
-      chunks.push(fg(T.text)("\n"));
-    }
+  for (const b of footerBindingsForProvider(activeTab)) {
+    chunks.push(fg(T.key)(b.key.padEnd(4)));
+    chunks.push(fg(T.value)(tr(b.labelKey)));
+    chunks.push(fg(T.text)("\n"));
   }
   chunks.push(fg(T.text)("\n"));
   chunks.push(fg(T.textDim)(`locale: ${localeLabel(getLocale())}  (? closes)`));
@@ -1441,7 +1453,7 @@ export async function runTui(opts: RunTuiOptions = {}): Promise<void> {
 
   const brandText = new TextRenderable(renderer, {
     id: "brand",
-    content: styledBrand(),
+    content: styledBrand(activeTab),
     height: 1,
     width: "100%",
   });
@@ -1577,6 +1589,7 @@ export async function runTui(opts: RunTuiOptions = {}): Promise<void> {
     id: "edit-input",
     width: "100%",
     visible: false,
+    maxLength: 65536,
     backgroundColor: parseColor(T.surfaceRaised),
     textColor: parseColor(T.value),
     focusedBackgroundColor: parseColor(T.surfaceRaised),
@@ -1593,7 +1606,7 @@ export async function runTui(opts: RunTuiOptions = {}): Promise<void> {
 
   const footer = new TextRenderable(renderer, {
     id: "footer",
-    content: styledFooter(),
+    content: styledFooter(activeTab),
     height: 1,
     width: "100%",
   });
@@ -1784,7 +1797,7 @@ export async function runTui(opts: RunTuiOptions = {}): Promise<void> {
       const hue = providerHue(activeTab);
 
       applyProviderChrome(activeTab);
-      safeSetContent(brandText, styledBrand());
+      safeSetContent(brandText, styledBrand(activeTab));
       safeSetContent(tabText, styledTabBar(activeTab));
       void renderTabBar(activeTab);
       safeSetContent(
@@ -1795,7 +1808,7 @@ export async function runTui(opts: RunTuiOptions = {}): Promise<void> {
         statusText,
         styledHints(semanticStatus, liveEnabled, liveBusy),
       );
-      safeSetContent(footer, styledFooter());
+      safeSetContent(footer, styledFooter(activeTab));
 
       accountSelect.options = accountOptions(v, adapter(), now);
       accountSelect.selectedBackgroundColor = parseColor(hue.selectedBg);
