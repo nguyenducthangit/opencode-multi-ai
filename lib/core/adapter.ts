@@ -15,7 +15,11 @@ import type { ProviderKind } from "./schemas.js";
 export type { ProviderKind } from "./schemas.js";
 
 /** OpenCode provider id registered by each plugin entry. */
-export type ProviderId = "xai-multi" | "codex-multi" | "kiro-multi";
+export type ProviderId =
+  | "xai-multi"
+  | "codex-multi"
+  | "kiro-multi"
+  | "opencode-go-multi";
 
 /**
  * Headers init without relying on a DOM lib entry.
@@ -68,6 +72,8 @@ export interface BuildHeadersContext {
   organizationId?: string;
   promptCacheKey?: string;
   initHeaders?: AdapterHeadersInit;
+  /** Resolved request URL (after adapter.resolveUrl) — for host-aware headers. */
+  url?: string;
 }
 
 /** Context for body transform (reasoning inject / store:false / etc). */
@@ -98,6 +104,14 @@ export interface ProbeQuotaAccount {
   region?: string;
   oidcRegion?: string;
   profileArn?: string;
+  /**
+   * opencode-go only: per-account dashboard credentials (workspace id + auth
+   * cookie). When both are set the dashboard probe uses them instead of the
+   * env fallback — see `lib/providers/opencode-go/dashboard.ts`.
+   * SENSITIVE: the cookie value must never be logged or echoed.
+   */
+  openCodeGoWorkspaceId?: string;
+  openCodeGoAuthCookie?: string;
 }
 
 /** Options for the models catalog resolver. */
@@ -107,6 +121,34 @@ export interface ResolveModelsOptions {
   allowNetwork?: boolean;
   cachePath?: string;
 }
+
+/**
+ * opencode-go only: workspace dashboard quota snapshot (probe-time).
+ *
+ * Quota is WORKSPACE-LEVEL (shared across every pool key) and scraped from
+ * the dashboard HTML with an env auth cookie — see
+ * `lib/providers/opencode-go/dashboard.ts`. Only opencode-go populates this
+ * field; other providers keep their own record fields.
+ */
+export type OpenCodeGoQuotaSnapshot = {
+  rolling?: { usagePercent: number; resetAt: number };
+  weekly?: { usagePercent: number; resetAt: number };
+  monthly?: { usagePercent: number; resetAt: number };
+};
+
+/**
+ * Result of an optional live quota probe.
+ *
+ * Structural record plus the fields shared across providers; each provider
+ * may add its own fields (xai: billing/plan, codex: usage windows, kiro:
+ * usedCount/limitCount). `openCodeGoQuota` is populated by opencode-go only.
+ */
+export type ProbeQuotaResult = Record<string, unknown> & {
+  ok?: boolean;
+  reason?: string;
+  status?: number;
+  openCodeGoQuota?: OpenCodeGoQuotaSnapshot;
+};
 
 /** Provider metadata shared by HTTP and SDK-backed transports. */
 export interface ProviderDescriptor {
@@ -123,7 +165,7 @@ export interface ProviderDescriptor {
   probeQuota?(
     accessToken: string,
     account: ProbeQuotaAccount,
-  ): Promise<Record<string, unknown>>;
+  ): Promise<ProbeQuotaResult>;
   hostAuth?: {
     bootstrap(providerId: string): boolean;
     ensureAfterLogin(providerId: string, accountId?: string): void;
@@ -163,7 +205,7 @@ export interface HttpTransportAdapter {
   probeQuota?(
     accessToken: string,
     account: ProbeQuotaAccount,
-  ): Promise<Record<string, unknown>>;
+  ): Promise<ProbeQuotaResult>;
 }
 
 export type FetchLike = (
@@ -250,7 +292,7 @@ export interface ProviderAdapter {
   probeQuota?(
     accessToken: string,
     account: ProbeQuotaAccount,
-  ): Promise<Record<string, unknown>>;
+  ): Promise<ProbeQuotaResult>;
 
   /** Models catalog resolver (cache / network / defaults). */
   resolveModels(opts: ResolveModelsOptions): Promise<Record<string, unknown>>;
@@ -295,7 +337,8 @@ function isDescriptor(value: Record<string, unknown>): boolean {
   return (
     (provider === "xai" && id === "xai-multi") ||
     (provider === "codex" && id === "codex-multi") ||
-    (provider === "kiro" && id === "kiro-multi")
+    (provider === "kiro" && id === "kiro-multi") ||
+    (provider === "opencode-go" && id === "opencode-go-multi")
   ) &&
     typeof value.displayName === "string" &&
     typeof value.resolveModels === "function" &&
