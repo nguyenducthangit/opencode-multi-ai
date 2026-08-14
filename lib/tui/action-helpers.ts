@@ -11,6 +11,7 @@ export type TuiAction =
   | "tab-xai"
   | "tab-codex"
   | "tab-kiro"
+  | "tab-opencode-go"
   | "tab-next"
   | "toggle-locale"
   | "cycle-selection"
@@ -24,6 +25,8 @@ export type TuiAction =
   | "add-kiro-json"
   | "add-kiro-export"
   | "add-kiro-cli"
+  | "add-opencode-go-api-key"
+  | "rotate-active"
   | "switch"
   | "prio-up"
   | "prio-down"
@@ -75,6 +78,7 @@ export type TuiBinding = {
 const XAI_CODEX: readonly ProviderKind[] = ["xai", "codex"];
 const CODEX_ONLY: readonly ProviderKind[] = ["codex"];
 const KIRO_ONLY: readonly ProviderKind[] = ["kiro"];
+const OPENCODE_GO_ONLY: readonly ProviderKind[] = ["opencode-go"];
 
 /**
  * Canonical binding registry for footer + help generation.
@@ -153,6 +157,24 @@ export const TUI_BINDINGS: readonly TuiBinding[] = Object.freeze([
     descKey: "desc_add_kiro_cli",
     available: true,
     providers: KIRO_ONLY,
+  },
+  {
+    key: "a",
+    action: "add-opencode-go-api-key",
+    labelKey: "a  Add API key (sk_)",
+    descKey:
+      "Paste an OpenCode Go API key (sk_…) — no OAuth, no wizard",
+    available: true,
+    providers: OPENCODE_GO_ONLY,
+  },
+  {
+    key: "w",
+    action: "rotate-active",
+    labelKey: "w  Rotate key",
+    descKey:
+      "Switch the active OpenCode Go key into OpenCode's auth.json — restart opencode for it to take effect",
+    available: true,
+    providers: OPENCODE_GO_ONLY,
   },
   {
     key: "s",
@@ -442,6 +464,7 @@ export function decodeTuiAction(key: TuiKeyEvent): TuiAction | undefined {
   if (name === "1" || seq === "1") return "tab-codex";
   if (name === "2" || seq === "2") return "tab-xai";
   if (name === "3" || seq === "3") return "tab-kiro";
+  if (name === "4" || seq === "4") return "tab-opencode-go";
 
   // Letter actions — shift distinguishes A/R/L
   const letter =
@@ -478,6 +501,7 @@ export function decodeTuiAction(key: TuiKeyEvent): TuiAction | undefined {
   if (letter === "c" && !ctrl) return "add-kiro-cli";
   if (letter === "r") return shift || seq === "R" ? "refresh-all" : "refresh";
   if (letter === "l") return shift || seq === "L" ? "reload" : "label";
+  if (letter === "w") return "rotate-active";
   if (letter === "j" || letter === "k") return undefined;
 
   return undefined;
@@ -606,7 +630,16 @@ export type ActionMenuSelectValue =
   | { type: "run"; action: TuiAction };
 
 const GROUP_ACTIONS: Record<ActionMenuGroupId, readonly TuiAction[]> = {
-  account: ["switch", "enable", "disable", "prio-up", "prio-down", "prio-top"],
+  account: [
+    "switch",
+    "enable",
+    "disable",
+    "prio-up",
+    "prio-down",
+    "prio-top",
+    // Provider-scoped binding renders this only on the opencode-go tab.
+    "rotate-active",
+  ],
   edit: ["label", "tags", "note"],
   add: ["add-device", "add-browser"],
   quota: ["refresh", "refresh-all", "toggle-live", "reload"],
@@ -633,11 +666,16 @@ const XAI_ADD_ACTIONS: readonly TuiAction[] = [
   "add-browser",
 ];
 
+const OPENCODE_GO_ADD_ACTIONS: readonly TuiAction[] = [
+  "add-opencode-go-api-key",
+];
+
 export function addActionsForProvider(
   provider: ProviderKind | undefined,
 ): readonly TuiAction[] {
   if (provider === "kiro") return KIRO_ADD_ACTIONS;
   if (provider === "codex") return CODEX_ADD_ACTIONS;
+  if (provider === "opencode-go") return OPENCODE_GO_ADD_ACTIONS;
   return XAI_ADD_ACTIONS;
 }
 
@@ -695,6 +733,7 @@ export function addGroupKeysForProvider(
 ): string {
   if (provider === "kiro") return "a i I o O c";
   if (provider === "codex") return "a A o";
+  if (provider === "opencode-go") return "a";
   return "a A";
 }
 
@@ -729,7 +768,9 @@ export function actionMenuItems(
           ? "menu_desc_add_kiro"
           : id === "add" && provider === "codex"
             ? "menu_desc_add_codex"
-            : meta.descKey;
+            : id === "add" && provider === "opencode-go"
+              ? "Paste an OpenCode Go API key (sk_…) — no OAuth"
+              : meta.descKey;
       items.push({
         kind: "group",
         id,

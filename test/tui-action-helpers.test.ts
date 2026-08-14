@@ -101,7 +101,18 @@ describe("decodeTuiAction", () => {
     expect(decodeTuiAction(key({ name: "v" }))).toBe("toggle-live");
     expect(decodeTuiAction(key({ name: "1" }))).toBe("tab-codex");
     expect(decodeTuiAction(key({ name: "2" }))).toBe("tab-xai");
+    expect(decodeTuiAction(key({ name: "4" }))).toBe("tab-opencode-go");
     expect(decodeTuiAction(key({ name: "tab" }))).toBe("tab-next");
+  });
+
+  it("maps w to rotate-active; other tabs still decode it globally", () => {
+    expect(decodeTuiAction(key({ name: "w" }))).toBe("rotate-active");
+    expect(decodeTuiAction(key({ sequence: "w" }))).toBe("rotate-active");
+    // Rotate must not steal existing refresh keys.
+    expect(decodeTuiAction(key({ name: "r" }))).toBe("refresh");
+    expect(decodeTuiAction(key({ name: "r", shift: true }))).toBe(
+      "refresh-all",
+    );
   });
 
   it("table: case-sensitive letter decode matrix", () => {
@@ -410,6 +421,12 @@ describe("action menu hierarchy", () => {
       "add-kiro-export",
       "add-kiro-cli",
     ]);
+
+    const goItems = actionMenuItems(level, "opencode-go");
+    const goActions = goItems
+      .filter((i) => i.kind === "action")
+      .map((i) => (i.kind === "action" ? i.binding.action : ""));
+    expect(goActions).toEqual(["add-opencode-go-api-key"]);
   });
 
   it("decodes kiro/codex add hotkeys", () => {
@@ -440,6 +457,7 @@ describe("action menu hierarchy", () => {
     const codex = actionMenuItems(createActionMenuLevel(), "codex");
     const xai = actionMenuItems(createActionMenuLevel(), "xai");
     const kiro = actionMenuItems(createActionMenuLevel(), "kiro");
+    const go = actionMenuItems(createActionMenuLevel(), "opencode-go");
     expect(
       codex.some((i) => i.kind === "top" && i.action === "toggle-codex-fast"),
     ).toBe(true);
@@ -448,6 +466,9 @@ describe("action menu hierarchy", () => {
     ).toBe(false);
     expect(
       kiro.some((i) => i.kind === "top" && i.action === "toggle-codex-fast"),
+    ).toBe(false);
+    expect(
+      go.some((i) => i.kind === "top" && i.action === "toggle-codex-fast"),
     ).toBe(false);
   });
 
@@ -476,6 +497,45 @@ describe("action menu hierarchy", () => {
     expect(kiro.find((b) => b.key === "a")?.action).toBe("add-kiro-idc");
     expect(codex.find((b) => b.key === "o")?.action).toBe("add-codex-json");
     expect(kiro.find((b) => b.key === "o")?.action).toBe("add-kiro-json");
+  });
+
+  it("opencode-go footer advertises key add + rotate only on its tab", () => {
+    const go = footerBindingsForProvider("opencode-go");
+    const xai = footerBindingsForProvider("xai");
+    const goActions = go.map((b) => b.action);
+
+    expect(goActions).toContain("add-opencode-go-api-key");
+    expect(goActions).toContain("rotate-active");
+    expect(goActions).not.toContain("add-device");
+    expect(goActions).not.toContain("add-browser");
+    expect(go.find((b) => b.key === "a")?.action).toBe(
+      "add-opencode-go-api-key",
+    );
+    expect(go.find((b) => b.key === "w")?.action).toBe("rotate-active");
+    // No cross-tab leakage.
+    expect(xai.map((b) => b.action)).not.toContain("rotate-active");
+    expect(xai.map((b) => b.action)).not.toContain(
+      "add-opencode-go-api-key",
+    );
+  });
+
+  it("rotate-active renders only in the opencode-go account group", () => {
+    const go = openActionMenuGroup(createActionMenuLevel(), "account");
+    const goItems = actionMenuItems(go, "opencode-go");
+    expect(
+      goItems.some(
+        (i) => i.kind === "action" && i.binding.action === "rotate-active",
+      ),
+    ).toBe(true);
+    for (const provider of ["xai", "codex", "kiro"] as const) {
+      const items = actionMenuItems(go, provider);
+      expect(
+        items.some(
+          (i) => i.kind === "action" && i.binding.action === "rotate-active",
+        ),
+        `rotate-active must not render on ${provider}`,
+      ).toBe(false);
+    }
   });
 
   it("bindingAppliesTo / bindingsForProvider respect providers field", () => {

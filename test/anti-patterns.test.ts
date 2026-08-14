@@ -249,7 +249,12 @@ describe("anti-patterns: plugin modules export only default", () => {
 
   it("package root re-exports all PluginModules as named exports (no default)", async () => {
     const mod = await import("../index.js");
-    expect(Object.keys(mod).sort()).toEqual(["codex", "kiro", "xai"]);
+    expect(Object.keys(mod).sort()).toEqual([
+      "codex",
+      "kiro",
+      "opencodeGo",
+      "xai",
+    ]);
     expect(mod.xai).toEqual(
       expect.objectContaining({
         id: "xai-multi",
@@ -265,6 +270,12 @@ describe("anti-patterns: plugin modules export only default", () => {
     expect(mod.kiro).toEqual(
       expect.objectContaining({
         id: "kiro-multi",
+        server: expect.any(Function),
+      }),
+    );
+    expect(mod.opencodeGo).toEqual(
+      expect.objectContaining({
+        id: "opencode-go-multi",
         server: expect.any(Function),
       }),
     );
