@@ -59,7 +59,7 @@ describe("createAntigravityFetch", () => {
         }),
       );
 
-    const fetchFn = createAntigravityFetch({ manager: mockManager as any });
+    const fetchFn = createAntigravityFetch({ manager: mockManager as any } as any);
 
     const res = await fetchFn("http://localhost/v1/chat/completions", {
       method: "POST",
@@ -109,7 +109,7 @@ describe("createAntigravityFetch", () => {
       .mockResolvedValueOnce(new Response("429 error", { status: 429 }))
       .mockResolvedValueOnce(new Response(createMockStream("Acc 2 success"), { status: 200 }));
 
-    const fetchFn = createAntigravityFetch({ manager: mockManager as any });
+    const fetchFn = createAntigravityFetch({ manager: mockManager as any } as any);
 
     const res = await fetchFn("http://localhost/v1/chat/completions", {
       method: "POST",
@@ -150,7 +150,7 @@ describe("createAntigravityFetch", () => {
       .mockResolvedValueOnce(new Response("VALIDATION_REQUIRED", { status: 403 }))
       .mockResolvedValueOnce(new Response(createMockStream("Success on acc 2"), { status: 200 }));
 
-    const fetchFn = createAntigravityFetch({ manager: mockManager as any });
+    const fetchFn = createAntigravityFetch({ manager: mockManager as any } as any);
 
     const res = await fetchFn("http://localhost/v1/chat/completions", {
       method: "POST",

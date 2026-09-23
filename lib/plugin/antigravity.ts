@@ -18,6 +18,7 @@ import {
   waitForOAuthCallback,
 } from "../providers/antigravity/auth/oauth.js";
 import { importAntigravityFrom9Router } from "../providers/antigravity/auth/import-9router.js";
+import { startAntigravityBackgroundPrewarm } from "../providers/antigravity/auth/prewarm.js";
 import { ensureBundledSkillsInstalled } from "../core/skills-sync.js";
 
 type OAuthSuccess = {
@@ -36,6 +37,7 @@ const plugin: Plugin = async () => {
   bootstrapHostAuthIfNeeded(PROVIDER_ID, DUMMY_API_KEY);
   const manager = getAccountManager();
   await manager.load();
+  startAntigravityBackgroundPrewarm(manager);
 
   const adapter = createAntigravityAdapter();
   const customFetch = createProviderFetch(adapter, manager);
