@@ -137,14 +137,14 @@ export function createAntigravityFetch(
 
       const endpoints = [
         {
-          url: "https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
-          isProd: true,
-          timeoutMs: 4000,
+          url: `${ANTIGRAVITY_BASE_URL}/v1internal:streamGenerateContent?alt=sse`,
+          isPrimary: true,
+          timeoutMs: 60000,
         },
         {
-          url: `${ANTIGRAVITY_BASE_URL}/v1internal:streamGenerateContent?alt=sse`,
-          isProd: false,
-          timeoutMs: 35000,
+          url: "https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+          isPrimary: false,
+          timeoutMs: 60000,
         },
       ];
 
@@ -191,10 +191,10 @@ export function createAntigravityFetch(
           }
 
           if (res.status === 429 || res.status === 403) {
-            if (ep.isProd) {
-              // Prod is exhausted for this account, fall back to Daily before rotating
-              logger.info(
-                `Antigravity account ${account?.email || accountId} hit HTTP ${res.status} on Prod, falling back to Daily endpoint...`,
+            if (ep.isPrimary) {
+              // Primary endpoint is exhausted for this account, fall back to secondary before rotating
+              logger.debug(
+                `Antigravity account ${account?.email || accountId} hit HTTP ${res.status} on primary, trying fallback endpoint...`,
               );
               continue;
             }
@@ -233,11 +233,13 @@ export function createAntigravityFetch(
           break;
         } catch (fetchErr) {
           lastError = fetchErr as Error;
-          logger.warn(`Antigravity fetch error on ${ep.url}: ${(fetchErr as Error).message}`);
-          if (ep.isProd) {
-            // Prod timed out or network error, fallback to daily immediately
+          if (ep.isPrimary) {
+            logger.debug(
+              `Antigravity primary endpoint error (${(fetchErr as Error).message}), attempting fallback...`,
+            );
             continue;
           }
+          logger.warn(`Antigravity fetch error on ${ep.url}: ${(fetchErr as Error).message}`);
         }
       }
     }

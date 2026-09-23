@@ -27,7 +27,7 @@ describe("createAntigravityFetch", () => {
     });
   }
 
-  it("falls back from Prod (429) to Daily (200) without marking account exhausted", async () => {
+  it("falls back from Daily (429) to Prod (200) without marking account exhausted", async () => {
     const markQuotaExhausted = vi.fn().mockResolvedValue(undefined);
     const touchLastUsed = vi.fn().mockResolvedValue(undefined);
 
@@ -42,8 +42,8 @@ describe("createAntigravityFetch", () => {
       markDeadCandidate: vi.fn().mockResolvedValue(undefined),
     };
 
-    // First call (Prod): returns 429
-    // Second call (Daily): returns 200 with body
+    // First call (Daily): returns 429
+    // Second call (Prod): returns 200 with body
     const mockedFetch = vi.mocked(directGoogleFetch);
     mockedFetch
       .mockResolvedValueOnce(
@@ -53,7 +53,7 @@ describe("createAntigravityFetch", () => {
         ),
       )
       .mockResolvedValueOnce(
-        new Response(createMockStream("Hello from daily!"), {
+        new Response(createMockStream("Hello from prod!"), {
           status: 200,
           headers: { "Content-Type": "text/event-stream" },
         }),
@@ -71,17 +71,17 @@ describe("createAntigravityFetch", () => {
     });
 
     expect(res.status).toBe(200);
-    // Verified: Prod was called first, then Daily
+    // Verified: Daily was called first, then Prod
     expect(mockedFetch).toHaveBeenCalledTimes(2);
-    expect(mockedFetch.mock.calls[0][0]).toContain("cloudcode-pa.googleapis.com");
-    expect(mockedFetch.mock.calls[1][0]).toContain("daily-cloudcode-pa.googleapis.com");
+    expect(mockedFetch.mock.calls[0][0]).toContain("daily-cloudcode-pa.googleapis.com");
+    expect(mockedFetch.mock.calls[1][0]).toContain("cloudcode-pa.googleapis.com");
 
-    // Quota should NOT be exhausted because Daily succeeded
+    // Quota should NOT be exhausted because Prod succeeded
     expect(markQuotaExhausted).not.toHaveBeenCalled();
     expect(touchLastUsed).toHaveBeenCalledWith("antigravity", "acc-1");
   });
 
-  it("marks quota exhausted and rotates when both Prod and Daily return 429", async () => {
+  it("marks quota exhausted and rotates when both Daily and Prod return 429", async () => {
     const markQuotaExhausted = vi.fn().mockResolvedValue(undefined);
     let attemptCount = 0;
 
@@ -102,8 +102,8 @@ describe("createAntigravityFetch", () => {
     };
 
     const mockedFetch = vi.mocked(directGoogleFetch);
-    // acc-1: Prod 429 -> Daily 429
-    // acc-2: Prod 200
+    // acc-1: Daily 429 -> Prod 429
+    // acc-2: Daily 200
     mockedFetch
       .mockResolvedValueOnce(new Response("429 error", { status: 429 }))
       .mockResolvedValueOnce(new Response("429 error", { status: 429 }))

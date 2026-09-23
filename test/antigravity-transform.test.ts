@@ -197,4 +197,29 @@ describe("Antigravity Request Transformer", () => {
     );
     expect(effortPayload.request.generationConfig?.thinkingConfig?.thinkingBudget).toBe(8192);
   });
+
+  it("correctly routes Claude Opus, Claude Sonnet, Gemini Pro, and Flash without falling through", () => {
+    // Opus variants
+    const opus1 = transformOpenAiToGemini({ model: "opus" }, { projectId: "p" });
+    expect(opus1.model).toBe("claude-opus-4-6-thinking");
+
+    const opus2 = transformOpenAiToGemini({ model: "antigravity-multi/claude-opus-4-6-thinking" }, { projectId: "p" });
+    expect(opus2.model).toBe("claude-opus-4-6-thinking");
+
+    // Sonnet variants
+    const sonnet1 = transformOpenAiToGemini({ model: "sonnet" }, { projectId: "p" });
+    expect(sonnet1.model).toBe("claude-sonnet-4-6");
+
+    const sonnet2 = transformOpenAiToGemini({ model: "claude-3-5-sonnet" }, { projectId: "p" });
+    expect(sonnet2.model).toBe("claude-sonnet-4-6");
+
+    // Pro variants
+    const pro1 = transformOpenAiToGemini({ model: "gemini-3.1-pro" }, { projectId: "p" });
+    expect(pro1.model).toBe("gemini-3.1-pro-low");
+
+    // Flash zero
+    const flash1 = transformOpenAiToGemini({ model: "gemini-3-flash" }, { projectId: "p" });
+    expect(flash1.model).toBe("gemini-3-flash");
+    expect(flash1.request.generationConfig?.thinkingConfig?.thinkingBudget).toBe(0);
+  });
 });

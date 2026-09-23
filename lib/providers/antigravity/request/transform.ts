@@ -64,55 +64,73 @@ export function resolveInternalModel(
   internalModel: string;
   thinkingBudget?: number;
 } {
-  const raw = (modelName || "gemini-3-flash").replace(/^(antigravity\/|ag\/)/, "").toLowerCase();
+  const raw = (modelName || "gemini-3-flash")
+    .replace(/^(antigravity-multi\/|antigravity\/|ag\/)/, "")
+    .toLowerCase();
 
   let customBudget: number | undefined;
   if (effort === "low") customBudget = 1024;
-  else if (effort === "medium") customBudget = 2048;
+  else if (effort === "medium") customBudget = 4096;
   else if (effort === "high") customBudget = 8192;
 
-  // 1. Instant / zero thinking model
-  if (
-    raw === "gemini-3-flash" ||
-    raw === "gemini-flash" ||
-    raw === "gemini-3-flash-zero" ||
-    raw === "gemini-3-flash-command"
-  ) {
-    return { internalModel: "gemini-3-flash", thinkingBudget: 0 };
+  // 1. Claude Opus (explicit or fuzzy match)
+  if (raw.includes("opus")) {
+    return { internalModel: "claude-opus-4-6-thinking", thinkingBudget: customBudget ?? 8192 };
   }
 
-  // Claude models supported by Antigravity Cloud Code
-  if (raw.includes("claude-sonnet") || raw === "claude-3-7-sonnet-thought") {
-    return { internalModel: "claude-sonnet-4-6", thinkingBudget: customBudget };
-  }
-  if (raw.includes("claude-opus")) {
-    return { internalModel: "claude-opus-4-6-thinking", thinkingBudget: customBudget };
-  }
-  if (raw.includes("gpt-oss")) {
-    return { internalModel: "gpt-oss-120b-medium", thinkingBudget: customBudget };
+  // 2. Claude Sonnet or any other Claude reference
+  if (raw.includes("sonnet") || raw.includes("claude")) {
+    return { internalModel: "claude-sonnet-4-6", thinkingBudget: customBudget ?? 4096 };
   }
 
-  // 2. Gemini 3.8 Flash High (Deep Reasoning)
-  if (raw === "gemini-3.8-flash-high" || (raw.includes("3.8") && !raw.includes("low")) || raw.includes("high") || raw.includes("agent")) {
-    return { internalModel: "gemini-3.6-flash-high", thinkingBudget: customBudget ?? 8192 };
+  // 3. Open weights / GPT-OSS
+  if (raw.includes("gpt-oss") || raw.includes("oss")) {
+    return { internalModel: "gpt-oss-120b-medium", thinkingBudget: customBudget ?? 4096 };
   }
 
-  // 3. Gemini 3.7 Flash Medium (Balanced)
-  if (raw.includes("3.7") || raw.includes("medium")) {
-    return { internalModel: "gemini-3.6-flash-low", thinkingBudget: customBudget ?? 4096 };
-  }
-
-  // 4. Gemini 3.1 Pro (Flagship Architecture)
+  // 4. Gemini Pro flagship models
   if (raw.includes("pro") || raw.includes("3.1")) {
     return { internalModel: "gemini-3.1-pro-low", thinkingBudget: customBudget ?? 4096 };
   }
 
-  // 5. Gemini 3.6 Flash (Fast / Light Reasoning)
-  if (raw.includes("3.6") || raw.includes("low") || raw.includes("flash")) {
+  // 5. Zero-thinking Flash (instant command/edit execution)
+  if (
+    raw === "gemini-3-flash" ||
+    raw === "gemini-flash" ||
+    raw.includes("zero") ||
+    raw.includes("instant") ||
+    raw.includes("command")
+  ) {
+    return { internalModel: "gemini-3-flash", thinkingBudget: 0 };
+  }
+
+  // 6. Gemini 3.8 Flash High (Deep Reasoning)
+  if (
+    raw === "gemini-3.8-flash-high" ||
+    (raw.includes("3.8") && !raw.includes("low")) ||
+    (raw.includes("flash") && raw.includes("high")) ||
+    raw.includes("agent")
+  ) {
+    return { internalModel: "gemini-3.6-flash-high", thinkingBudget: customBudget ?? 8192 };
+  }
+
+  // 7. Gemini 3.7 Flash Medium (Balanced)
+  if (raw.includes("3.7") || (raw.includes("flash") && raw.includes("medium"))) {
+    return { internalModel: "gemini-3.6-flash-low", thinkingBudget: customBudget ?? 4096 };
+  }
+
+  // 8. Gemini 3.6 Flash (Fast / Light Reasoning)
+  if (raw.includes("3.6") || (raw.includes("flash") && raw.includes("low"))) {
     return { internalModel: "gemini-3.6-flash-low", thinkingBudget: customBudget ?? 2048 };
   }
 
-  return { internalModel: "gemini-3-flash", thinkingBudget: 0 };
+  // 9. Generic Flash fallback
+  if (raw.includes("flash")) {
+    return { internalModel: "gemini-3-flash", thinkingBudget: 0 };
+  }
+
+  // Default fallback for unknown model: default to deep reasoning Gemini rather than downgrading
+  return { internalModel: "gemini-3.6-flash-high", thinkingBudget: customBudget ?? 8192 };
 }
 
 const AGENT_CODE_REVIEW_PROMPT =
