@@ -5,11 +5,9 @@ import { createCodexHeaders } from "../lib/providers/codex/request/codex-headers
 import {
   CODEX_INCLUDE_ENCRYPTED_REASONING,
   forceEffortInBody,
-  isServiceTierRejected,
   isUltraEffortRejected,
   normalizeCodexEffort,
   normalizeCodexModel,
-  stripServiceTierFromBody,
   transformCodexBody,
   transformCodexRequestInit,
 } from "../lib/providers/codex/request/body-transform.js";
@@ -290,51 +288,5 @@ describe("transformCodexRequestInit", () => {
   it("leaves non-json bodies untouched", () => {
     const init = { body: "not-json" };
     expect(transformCodexRequestInit(init)).toBe(init);
-  });
-});
-
-describe("isServiceTierRejected / stripServiceTierFromBody", () => {
-  const rejectBody = JSON.stringify({
-    detail: "Unsupported service_tier: fast",
-  });
-
-  it("detects the unsupported service_tier 400", () => {
-    expect(isServiceTierRejected(400, rejectBody)).toBe(true);
-    expect(isServiceTierRejected(400, "unsupported service_tier: fast")).toBe(
-      true,
-    );
-    expect(isServiceTierRejected(400, "service_tier not supported")).toBe(true);
-    expect(isServiceTierRejected(400, "invalid service_tier value")).toBe(true);
-  });
-
-  it("ignores other 400s and non-400 statuses", () => {
-    expect(isServiceTierRejected(400, "Unsupported parameter: agents")).toBe(
-      false,
-    );
-    expect(isServiceTierRejected(400, undefined)).toBe(false);
-    expect(isServiceTierRejected(403, rejectBody)).toBe(false);
-    expect(isServiceTierRejected(200, rejectBody)).toBe(false);
-  });
-
-  it("strips service_tier from a JSON body", () => {
-    const body = JSON.stringify({
-      model: "gpt-5.6-sol",
-      service_tier: "fast",
-      reasoning: { effort: "high" },
-    });
-    const next = stripServiceTierFromBody(body);
-    expect(next).not.toBeNull();
-    const parsed = JSON.parse(next!) as Record<string, unknown>;
-    expect(parsed).not.toHaveProperty("service_tier");
-    expect(parsed.model).toBe("gpt-5.6-sol");
-    expect(parsed.reasoning).toEqual({ effort: "high" });
-  });
-
-  it("returns null when nothing to strip or body is not JSON", () => {
-    expect(
-      stripServiceTierFromBody(JSON.stringify({ model: "gpt-5.6-sol" })),
-    ).toBeNull();
-    expect(stripServiceTierFromBody("not-json")).toBeNull();
-    expect(stripServiceTierFromBody("")).toBeNull();
   });
 });
