@@ -162,18 +162,71 @@ export function transformOpenAiToGemini(
     const parts: GeminiPart[] = [];
 
     if (msg.role === "user") {
-      const txt = extractText(msg.content);
-      if (txt) parts.push({ text: txt });
+      if (Array.isArray(msg.content)) {
+        for (const item of msg.content) {
+          if (item && typeof item === "object") {
+            const it = item as Record<string, unknown>;
+            if (it.type === "tool_result") {
+              const callId = (it.tool_use_id as string) || (it.id as string);
+              const fnName = (callId ? toolCallIdToName.get(callId) : undefined) || "tool";
+              let resp: Record<string, unknown>;
+              if (typeof it.content === "object" && it.content !== null && !Array.isArray(it.content)) {
+                resp = it.content as Record<string, unknown>;
+              } else {
+                resp = { result: typeof it.content === "string" ? it.content : JSON.stringify(it.content) };
+              }
+              parts.push({
+                functionResponse: {
+                  id: callId,
+                  name: sanitizeFunctionName(fnName),
+                  response: resp,
+                },
+              });
+            } else if (it.type === "text" && typeof it.text === "string" && it.text) {
+              parts.push({ text: it.text });
+            }
+          }
+        }
+      } else {
+        const txt = extractText(msg.content);
+        if (txt) parts.push({ text: txt });
+      }
       if (parts.length === 0) parts.push({ text: " " });
       contents.push({ role: "user", parts });
     } else if (msg.role === "assistant") {
-      const txt = extractText(msg.content);
-      if (txt) parts.push({ text: txt });
+      if (Array.isArray(msg.content)) {
+        for (const item of msg.content) {
+          if (item && typeof item === "object") {
+            const it = item as Record<string, unknown>;
+            if (it.type === "text" && typeof it.text === "string" && it.text) {
+              parts.push({ text: it.text });
+            } else if (it.type === "tool_use") {
+              const callId = (it.id as string) || `call_${crypto.randomBytes(6).toString("hex")}`;
+              const fnName = (it.name as string) || "tool";
+              toolCallIdToName.set(callId, fnName);
+              const args = (typeof it.input === "object" && it.input !== null ? it.input : {}) as Record<string, unknown>;
+              parts.push({
+                thoughtSignature: DEFAULT_THINKING_AG_SIGNATURE,
+                thought_signature: DEFAULT_THINKING_AG_SIGNATURE,
+                functionCall: {
+                  id: callId,
+                  name: sanitizeFunctionName(fnName),
+                  args,
+                },
+              });
+            }
+          }
+        }
+      } else {
+        const txt = extractText(msg.content);
+        if (txt) parts.push({ text: txt });
+      }
 
       if (Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
         for (const tc of msg.tool_calls) {
-          if (tc.id && tc.function?.name) {
-            toolCallIdToName.set(tc.id, tc.function.name);
+          const callId = tc.id || `call_${crypto.randomBytes(6).toString("hex")}`;
+          if (tc.function?.name) {
+            toolCallIdToName.set(callId, tc.function.name);
           }
           let args: Record<string, unknown> = {};
           try {
@@ -185,6 +238,7 @@ export function transformOpenAiToGemini(
             thoughtSignature: DEFAULT_THINKING_AG_SIGNATURE,
             thought_signature: DEFAULT_THINKING_AG_SIGNATURE,
             functionCall: {
+              id: callId,
               name: sanitizeFunctionName(tc.function.name),
               args,
             },
@@ -205,13 +259,15 @@ export function transformOpenAiToGemini(
         responseObj = { result: txt };
       }
 
+      const callId = msg.tool_call_id || (msg as { id?: string }).id;
       const fnName =
         msg.name ||
-        (msg.tool_call_id ? toolCallIdToName.get(msg.tool_call_id) : undefined) ||
+        (callId ? toolCallIdToName.get(callId) : undefined) ||
         "tool";
 
       parts.push({
         functionResponse: {
+          id: callId,
           name: sanitizeFunctionName(fnName),
           response: responseObj,
         },

@@ -146,6 +146,7 @@ describe("Antigravity Request Transformer", () => {
     expect(contents[1].role).toBe("model");
     expect(contents[1].parts[0].text).toBe("Let me check the files.");
     expect(contents[1].parts[1].functionCall).toEqual({
+      id: "call_abc",
       name: "list_dir",
       args: { DirectoryPath: "/app" },
     });
@@ -153,6 +154,7 @@ describe("Antigravity Request Transformer", () => {
     // Tool response (Gemini role: user)
     expect(contents[2].role).toBe("user");
     expect(contents[2].parts[0].functionResponse).toEqual({
+      id: "call_abc",
       name: "list_dir",
       response: { files: ["main.dart", "pubspec.yaml"] },
     });
