@@ -65,7 +65,7 @@ export function modelAcceptsMaxEffort(model: string | undefined): boolean {
   const bare = model.includes("/")
     ? model.slice(model.lastIndexOf("/") + 1)
     : model;
-  return /^gpt-5\.6/i.test(bare);
+  return /^(?:gpt-5\.6|gpt-6|gpt-reserve)/i.test(bare);
 }
 
 export function normalizeCodexEffort(

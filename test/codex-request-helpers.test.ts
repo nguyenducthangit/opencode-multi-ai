@@ -157,11 +157,19 @@ describe("transformCodexBody", () => {
     expect(out.text).toEqual({ verbosity: "medium" });
   });
 
-  it("keeps max on 5.6; maps ultra→max; clamps max→xhigh on 5.5", () => {
+  it("keeps max on 5.6 and 6; maps ultra→max; clamps max→xhigh on 5.5", () => {
+    expect(normalizeCodexEffort("max", "gpt-6-astra")).toBe("max");
+    expect(normalizeCodexEffort("ultra", "gpt-6-astra")).toBe("max");
     expect(normalizeCodexEffort("max", "gpt-5.6-sol")).toBe("max");
     expect(normalizeCodexEffort("ultra", "gpt-5.6-sol")).toBe("max");
     expect(normalizeCodexEffort("max", "gpt-5.5")).toBe("xhigh");
     expect(normalizeCodexEffort("ultra", "gpt-5.5")).toBe("xhigh");
+    expect(
+      transformCodexBody(
+        { model: "gpt-6-astra" },
+        { reasoningEffort: "ultra" },
+      ).reasoning,
+    ).toEqual({ effort: "max" });
     expect(
       transformCodexBody(
         { model: "gpt-5.6-sol" },
@@ -212,7 +220,7 @@ describe("transformCodexBody", () => {
     );
   });
 
-  it("DEFAULT_MODELS: 5.6 family has max; never ultra", () => {
+  it("DEFAULT_MODELS: 5.6 and 6 families have max; never ultra", () => {
     for (const [id, meta] of Object.entries(DEFAULT_MODELS)) {
       const variants = meta.variants ?? {};
       for (const [vk, vv] of Object.entries(variants)) {
@@ -220,7 +228,10 @@ describe("transformCodexBody", () => {
         if (vv && typeof vv === "object" && "reasoningEffort" in vv) {
           const effort = (vv as { reasoningEffort: string }).reasoningEffort;
           expect(effort).not.toBe("ultra");
-          const is56 = id.startsWith("gpt-5.6-");
+          const hasMax =
+            id.startsWith("gpt-5.6-") ||
+            id.startsWith("gpt-6") ||
+            id === "gpt-reserve";
           const allowed = [
             "none",
             "minimal",
@@ -228,13 +239,18 @@ describe("transformCodexBody", () => {
             "medium",
             "high",
             "xhigh",
-            ...(is56 ? (["max"] as const) : []),
+            ...(hasMax ? (["max"] as const) : []),
           ];
           expect(allowed).toContain(effort);
         }
       }
     }
-    for (const id of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const) {
+    for (const id of [
+      "gpt-6-astra",
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+    ] as const) {
       expect(DEFAULT_MODELS[id]?.variants).toMatchObject({
         max: { reasoningEffort: "max" },
         xhigh: { reasoningEffort: "xhigh" },
