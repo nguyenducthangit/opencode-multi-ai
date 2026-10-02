@@ -1249,6 +1249,9 @@ export class AccountManager {
   ): Promise<void> {
     await this.mutateNonToken(provider, id, (account) => {
       account.enabled = enabled;
+      if (enabled) {
+        account.entitlementBlocked = false;
+      }
     });
   }
 
